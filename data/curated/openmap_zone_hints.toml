@@ -1,0 +1,37 @@
+# Zone hints for OpenMap points (pipeline/poi.py, `python -m pipeline poi`). Hand-maintained.
+#
+# Classic zone maps overlap: one point is often inside two or three census zone rects. `poi` uses a
+# hint only for such a point (one live zone rect decides without a hint), and only when the hinted
+# zone's census rect contains the point; a hint then beats a city rect. Without a usable hint a city
+# rect decides; otherwise the point goes to data/build/poi-problems.json and gives no link or entrance. A hint never moves a point: x, y are
+# always computed from OpenMap's world position and the hinted zone's census rect.
+#
+# Key: the OpenMap instance name ([instances]; a wing's instance name, e.g. "Dire Maul", covers its
+# wings) or route name ([transports]; covers every ambiguous end of that route). Value: a census
+# zone name (resolved to its uiMapID through data/census/maps.json), or a list tried in order (the
+# first one whose rect contains the point). Standard WoW geography; one comment per hint. A hint
+# no point needs is reported as unused.
+
+[instances]
+"Deadmines" = "Westfall"                       # Moonbrook, Westfall (the rect also reaches Stranglethorn Vale)
+"Wailing Caverns" = "The Barrens"              # the Lushwater Oasis, The Barrens
+"Razorfen Kraul" = "The Barrens"               # southern Barrens
+"Blackfathom Deeps" = "Ashenvale"              # the Zoram Strand, Ashenvale
+"Uldaman" = "Badlands"                         # the Badlands entrance (where a ghost returns)
+"Razorfen Downs" = "The Barrens"               # southern Barrens, at the Thousand Needles border
+"Scarlet Monastery" = "Tirisfal Glades"        # all four wings: Tirisfal Glades, at its eastern edge
+"Zul'Farrak" = "Tanaris"                       # northwestern Tanaris
+"Lower Blackrock Spire" = ["Burning Steppes", "Searing Gorge"]   # Blackrock Mountain (Upper Blackrock Spire shares this entrance)
+"Blackrock Depths" = ["Burning Steppes", "Searing Gorge"]        # Blackrock Mountain
+"Scholomance" = "Western Plaguelands"          # Caer Darrow, Western Plaguelands
+"Dire Maul" = "Feralas"                        # all three wings: Dire Maul, Feralas
+
+[transports]
+"Booty Bay - Ratchet" = "The Barrens"          # Ratchet docks (Booty Bay lies in one rect)
+"Grom'gol - Orgrimmar" = "Durotar"             # the Orgrimmar zeppelin tower stands outside the city gate, in Durotar (Grom'gol lies in one rect)
+"Menethil Ships" = ["Wetlands", "Dustwallow Marsh"]   # Menethil Harbor, Wetlands; Theramore Isle, Dustwallow Marsh
+"Rut'theran - Auberdine" = "Darkshore"         # Auberdine docks (Rut'theran Village lies in one rect)
+"Orgrimmar Zepplins" = ["Tirisfal Glades", "Durotar"]   # the Undercity zeppelin towers, Tirisfal Glades; the Orgrimmar towers outside the city, Durotar
+"Feathermoon - Feralas" = "Feralas"            # the Feralas coast dock (Feathermoon Stronghold is in Feralas too)
+"Menethil - Southshore - Auberdine" = ["Hillsbrad Foothills", "Darkshore"]   # Southshore, Hillsbrad Foothills; Auberdine docks, Darkshore
+"Stormwind - Auberdine" = "Darkshore"          # Auberdine docks (Stormwind Harbor: the city rect decides)

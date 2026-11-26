@@ -1,0 +1,5 @@
+<Bindings>
+  <Binding name="LEVELINGADVISOR_TOGGLE" header="LEVELINGADVISOR" category="ADDONS">
+    LevelingAdvisor_Toggle()
+  </Binding>
+</Bindings>

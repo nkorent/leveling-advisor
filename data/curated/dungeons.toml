@@ -1,0 +1,4 @@
+# Hand-maintained dungeons. Key = short code. faction: Alliance | Horde | Both.
+# Generated dungeons (dungeons.generated.toml, `python -m pipeline poi`, from OpenMap and the census)
+# are added under these; an entry here with the same key or name replaces the generated one.
+# None are needed yet.

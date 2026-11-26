@@ -1,0 +1,452 @@
+# Hand-maintained zones. Key = uiMapID. Written from the in-game census (data/census/maps.json) and the
+# kept-quest faction evidence (see pipeline/zone_faction.py); edit by hand from here.
+# faction: Alliance | Horde | Contested. Optional min_level / max_level override OpenMap levels and the computed
+#   percentiles (none are set: OpenMap Levels.lua supplies them, quest percentiles fill the gaps).
+# continent: the census continent uiMapID; omitted for a zone the census puts on no continent (Zephras Isle).
+# kind: "city" | "battleground"; absent = a leveling zone.
+# links: kind = walk | boat | zeppelin | tram | portal | flight; optional faction = Alliance | Horde.
+# Generated links (links.generated.toml, `python -m pipeline poi`) are added to the zones defined here.
+# A link here with the same (to, kind) replaces them. To drop generated links without replacing
+# them, list them in the source zone: drop_generated = [[to, "kind"], ...], e.g.
+#   drop_generated = [[1437, "walk"]]   # no generated walk links from this zone to 1437
+# Comments show: kept quests, single-faction split (Alliance/Horde), evidence verdict.
+
+# 91 kept quests; Alliance 2 / Horde 86
+[zones.1411]
+name = "Durotar"
+continent = 1414
+faction = "Horde"
+live = true
+complete = true
+
+# 84 kept quests; Alliance 0 / Horde 84
+[zones.1412]
+name = "Mulgore"
+continent = 1414
+faction = "Horde"
+live = true
+complete = true
+
+# 165 kept quests; Alliance 6 / Horde 119; classic expectation Contested
+[zones.1413]
+name = "The Barrens"
+continent = 1414
+faction = "Horde"
+live = true
+complete = true
+
+# 43 kept quests; Alliance 23 / Horde 6
+[zones.1416]
+name = "Alterac Mountains"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 64 kept quests; Alliance 22 / Horde 25
+[zones.1417]
+name = "Arathi Highlands"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 64 kept quests; Alliance 15 / Horde 31
+[zones.1418]
+name = "Badlands"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 27 kept quests; Alliance 9 / Horde 0; classic expectation Contested
+[zones.1419]
+name = "Blasted Lands"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+
+# 126 kept quests; Alliance 0 / Horde 125
+[zones.1420]
+name = "Tirisfal Glades"
+continent = 1415
+faction = "Horde"
+live = true
+complete = true
+
+# 66 kept quests; Alliance 3 / Horde 58
+[zones.1421]
+name = "Silverpine Forest"
+continent = 1415
+faction = "Horde"
+live = true
+complete = true
+
+# 67 kept quests; Alliance 29 / Horde 8
+[zones.1422]
+name = "Western Plaguelands"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 93 kept quests; Alliance 20 / Horde 28
+[zones.1423]
+name = "Eastern Plaguelands"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 83 kept quests; Alliance 32 / Horde 51
+[zones.1424]
+name = "Hillsbrad Foothills"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 40 kept quests; Alliance 16 / Horde 22
+[zones.1425]
+name = "The Hinterlands"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 104 kept quests; Alliance 104 / Horde 0
+[zones.1426]
+name = "Dun Morogh"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+
+# 26 kept quests; Alliance 6 / Horde 0
+[zones.1427]
+name = "Searing Gorge"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 48 kept quests; Alliance 16 / Horde 2; classic expectation Contested
+[zones.1428]
+name = "Burning Steppes"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+
+# 104 kept quests; Alliance 104 / Horde 0
+[zones.1429]
+name = "Elwynn Forest"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+
+# 0 kept quests; Alliance 0 / Horde 0
+[zones.1430]
+name = "Deadwind Pass"
+continent = 1415
+faction = "Contested"
+live = false
+complete = false
+
+# 70 kept quests; Alliance 66 / Horde 4; classic expectation Contested
+[zones.1431]
+name = "Duskwood"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+
+# 53 kept quests; Alliance 52 / Horde 0
+[zones.1432]
+name = "Loch Modan"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+
+# 44 kept quests; Alliance 42 / Horde 0; classic expectation Contested
+[zones.1433]
+name = "Redridge Mountains"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+
+# 145 kept quests; Alliance 29 / Horde 32
+[zones.1434]
+name = "Stranglethorn Vale"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 40 kept quests; Alliance 6 / Horde 16
+[zones.1435]
+name = "Swamp of Sorrows"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 48 kept quests; Alliance 42 / Horde 0
+[zones.1436]
+name = "Westfall"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+
+# 78 kept quests; Alliance 77 / Horde 1; classic expectation Contested
+[zones.1437]
+name = "Wetlands"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+
+# 84 kept quests; Alliance 84 / Horde 0
+[zones.1438]
+name = "Teldrassil"
+continent = 1414
+faction = "Alliance"
+live = true
+complete = true
+
+# 74 kept quests; Alliance 74 / Horde 0
+[zones.1439]
+name = "Darkshore"
+continent = 1414
+faction = "Alliance"
+live = true
+complete = true
+
+# 72 kept quests; Alliance 47 / Horde 25
+[zones.1440]
+name = "Ashenvale"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 53 kept quests; Alliance 2 / Horde 25; classic expectation Contested
+[zones.1441]
+name = "Thousand Needles"
+continent = 1414
+faction = "Horde"
+live = true
+complete = true
+
+# 45 kept quests; Alliance 14 / Horde 23
+[zones.1442]
+name = "Stonetalon Mountains"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 74 kept quests; Alliance 26 / Horde 27
+[zones.1443]
+name = "Desolace"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 80 kept quests; Alliance 39 / Horde 32
+[zones.1444]
+name = "Feralas"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 75 kept quests; Alliance 27 / Horde 29
+[zones.1445]
+name = "Dustwallow Marsh"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 79 kept quests; Alliance 8 / Horde 9
+[zones.1446]
+name = "Tanaris"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 67 kept quests; Alliance 15 / Horde 18
+[zones.1447]
+name = "Azshara"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 79 kept quests; Alliance 13 / Horde 11
+[zones.1448]
+name = "Felwood"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 46 kept quests; Alliance 3 / Horde 3
+[zones.1449]
+name = "Un'Goro Crater"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 25 kept quests; Alliance 9 / Horde 9
+[zones.1450]
+name = "Moonglade"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 40 kept quests; Alliance 3 / Horde 3
+[zones.1451]
+name = "Silithus"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 60 kept quests; Alliance 11 / Horde 9
+[zones.1452]
+name = "Winterspring"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 195 kept quests; Alliance 195 / Horde 0
+[zones.1453]
+name = "Stormwind City"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+kind = "city"
+
+# 155 kept quests; Alliance 0 / Horde 155
+[zones.1454]
+name = "Orgrimmar"
+continent = 1414
+faction = "Horde"
+live = true
+complete = true
+kind = "city"
+
+# 173 kept quests; Alliance 173 / Horde 0
+[zones.1455]
+name = "Ironforge"
+continent = 1415
+faction = "Alliance"
+live = true
+complete = true
+kind = "city"
+
+# 79 kept quests; Alliance 0 / Horde 79
+[zones.1456]
+name = "Thunder Bluff"
+continent = 1414
+faction = "Horde"
+live = true
+complete = true
+kind = "city"
+
+# 57 kept quests; Alliance 57 / Horde 0
+[zones.1457]
+name = "Darnassus"
+continent = 1414
+faction = "Alliance"
+live = true
+complete = true
+kind = "city"
+
+# 138 kept quests; Alliance 0 / Horde 138
+[zones.1458]
+name = "Undercity"
+continent = 1415
+faction = "Horde"
+live = true
+complete = true
+kind = "city"
+
+# 4 kept quests; Alliance 2 / Horde 2
+[zones.1459]
+name = "Alterac Valley"
+continent = 1415
+faction = "Contested"
+live = true
+complete = false
+kind = "battleground"
+
+# 0 kept quests; Alliance 0 / Horde 0
+[zones.1460]
+name = "Warsong Gulch"
+continent = 1414
+faction = "Contested"
+live = false
+complete = false
+kind = "battleground"
+
+# 0 kept quests; Alliance 0 / Horde 0
+[zones.1461]
+name = "Arathi Basin"
+continent = 1415
+faction = "Contested"
+live = false
+complete = false
+kind = "battleground"
+
+# 90 kept quests; Alliance 29 / Horde 14
+[zones.2482]
+name = "Mount Hyjal"
+continent = 1414
+faction = "Contested"
+live = true
+complete = true
+
+# 120 kept quests; Alliance 28 / Horde 24
+[zones.2521]
+name = "Zephras Isle"
+faction = "Contested"
+live = true
+complete = true
+
+# 0 kept quests; Alliance 0 / Horde 0
+[zones.2524]
+name = "Darkspear Islands"
+continent = 1414
+faction = "Contested"
+live = false
+complete = false
+
+# 162 kept quests; Alliance 79 / Horde 62
+[zones.2548]
+name = "Riverglades"
+continent = 1415
+faction = "Contested"
+live = true
+complete = true
+
+# 33 kept quests; Alliance 0 / Horde 12; classic expectation Contested
+[zones.2652]
+name = "Shen'dralas"
+continent = 1414
+faction = "Horde"
+live = true
+complete = true

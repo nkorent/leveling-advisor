@@ -1,0 +1,109 @@
+local _, ns = ...
+
+-- Decoder for Contract A data. Pure Lua, no WoW globals.
+local DB = {}
+DB.__index = DB
+ns.DB = DB
+
+local function sortedKeys(t)
+  local out = {}
+  for k in pairs(t or {}) do out[#out + 1] = k end
+  table.sort(out)
+  return out
+end
+
+local function hasFlag(flags, bit)
+  return math.floor((flags or 0) / bit) % 2 == 1
+end
+
+local function decodePlace(p)
+  if not p then return nil end
+  return { kind = p[1], id = p[2], mapID = p[3], x = p[4], y = p[5] }
+end
+
+local function copyList(list)
+  local out = {}
+  for i, v in ipairs(list or {}) do out[i] = v end
+  return out
+end
+
+local function decode(id, r)
+  local flags = r[9] or 0
+  local points = {}
+  for i, p in ipairs(r[13] or {}) do
+    points[i] = { mapID = p[1], x = p[2], y = p[3] }
+  end
+  local chain
+  if r[22] then chain = { id = r[22][1], index = r[22][2], length = r[22][3] } end
+  local prereq = r[19] or {}
+  return {
+    id = id, name = r[1], faction = r[2], raceMask = r[3], classMask = r[4],
+    requiredLevel = r[5], level = r[6], levelSource = r[7], zone = r[8],
+    flags = flags,
+    elite = hasFlag(flags, 1), classQuest = hasFlag(flags, 2),
+    newInForever = hasFlag(flags, 4), unverified = hasFlag(flags, 8),
+    repeatable = hasFlag(flags, 16), dungeonQuest = hasFlag(flags, 32),
+    groupSize = r[10], giver = decodePlace(r[11]), turnIn = decodePlace(r[12]),
+    points = points, objectiveText = r[14], items = r[15], rewards = r[16],
+    xp = r[17], xpSource = r[18],
+    prereq = { all = copyList(prereq.all), any = copyList(prereq.any) },
+    exclusiveTo = copyList(r[20]), breadcrumbOf = r[21], chain = chain,
+    dungeonKey = r[23], requiredMaxLevel = r[24],
+    -- ineligible once any of these is completed or in the log (Eligibility only, never Route)
+    unavailableAfter = copyList(r[25]),
+  }
+end
+
+function DB.new(data)
+  local self = setmetatable({}, DB)
+  self.data = data
+  self.cache = {}
+  self.zoneCache = {}
+  self.ids = sortedKeys(data.quests)
+  self.byZone = {}
+  for _, id in ipairs(self.ids) do
+    local g = data.quests[id][11]
+    local map = g and g[3]
+    if map then
+      local list = self.byZone[map]
+      if not list then list = {}; self.byZone[map] = list end
+      list[#list + 1] = id
+    end
+  end
+  return self
+end
+
+function DB:quest(id)
+  local q = self.cache[id]
+  if q then return q end
+  local r = self.data.quests and self.data.quests[id]
+  if not r then return nil end
+  q = decode(id, r)
+  self.cache[id] = q
+  return q
+end
+
+-- Fresh sorted copy each call.
+function DB:questIDs() return copyList(self.ids) end
+function DB:questsInZone(mapID) return copyList(self.byZone[mapID]) end
+
+function DB:npc(id) return self.data.npcs and self.data.npcs[id] end
+-- Zone records are the data tables, except that kind is validated: only "city" and
+-- "battleground" are known; anything else reads as nil (a leveling zone). Cached per DB.
+local ZONE_KINDS = { city = true, battleground = true }
+function DB:zone(mapID)
+  local raw = self.data.zones and self.data.zones[mapID]
+  if not raw then return nil end
+  if raw.kind == nil then return raw end
+  local z = self.zoneCache[mapID]
+  if z then return z end
+  z = {}
+  for k, v in pairs(raw) do z[k] = v end
+  if not ZONE_KINDS[z.kind] then z.kind = nil end
+  self.zoneCache[mapID] = z
+  return z
+end
+function DB:zoneIDs() return sortedKeys(self.data.zones) end
+function DB:continent(mapID) return self.data.continents and self.data.continents[mapID] end
+function DB:dungeon(key) return self.data.dungeons and self.data.dungeons[key] end
+function DB:dungeonKeys() return sortedKeys(self.data.dungeons) end

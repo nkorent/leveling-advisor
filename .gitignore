@@ -1,0 +1,13 @@
+.superpowers/
+.playwright-mcp/
+.remember/
+.impeccable/hook.cache.json
+data/raw/
+data/vendor/
+data/build/
+.venv/
+__pycache__/
+*.pyc
+dist/
+data/recorder/
+.publish/

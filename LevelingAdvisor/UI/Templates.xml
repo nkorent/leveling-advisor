@@ -1,0 +1,6 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+  <!-- Empty shell for the book's list rows (UI/List.lua fills it in Lua). -->
+  <Button name="LevelingAdvisorListRowTemplate" virtual="true">
+    <Size x="382" y="44"/>
+  </Button>
+</Ui>

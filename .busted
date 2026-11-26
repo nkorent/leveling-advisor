@@ -1,0 +1,1 @@
+return { _all = { lua = "luajit", lpath = "./?.lua;./?/init.lua", ROOT = { "spec" }, pattern = "_spec" } }

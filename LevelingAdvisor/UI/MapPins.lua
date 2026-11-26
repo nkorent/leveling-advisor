@@ -1,0 +1,536 @@
+local addonName, ns = ...
+
+-- World-map pins for the recommended quests (spec 5.6). Two parts:
+--   * MapPins.build: a pure model, rec -> pins for one zone map;
+--   * the rendering glue: a MapCanvasDataProviderMixin provider and a pin
+--     template (MapPins.xml), modelled on dev/LevelingAdvisorDiag/Pins.lua
+--     variants A and B, which were visible on WoW: Forever 1.60.1.
+-- Every WoW global is fail-soft: a missing API skips the feature, never errors.
+local MapPins = {}
+ns.MapPins = MapPins
+
+local call, method = ns.Util.call, ns.Util.method
+
+local TEMPLATE = "LevelingAdvisorMapPinTemplate"
+local LEVEL_TYPE = "PIN_FRAME_LEVEL_AREA_POI"
+local MERGE_DISTANCE = 0.5 -- map units (0-100)
+
+local PICKUP_SECTIONS = { here = true, class = true, chains = true, next = true }
+local TURNIN_SECTION = "turnin"
+
+-- The pin is a small gold-rimmed shield (own texture, Media/PinShield.tga,
+-- made by tools/make-pin-textures.py) with the quest glyph (! pick up, ? turn
+-- in) on top. If the client cannot load the texture, a medallion of stacked
+-- discs (shadow, gold rim, dark inner) is drawn instead.
+local PIN_W, PIN_H = 16, 18
+local MEDIA = "Interface\\AddOns\\" .. tostring(addonName) .. "\\Media\\"
+local SHIELD_TEX, GLOW_TEX = MEDIA .. "PinShield", MEDIA .. "PinShieldGlow"
+local GLOW_W, GLOW_H = 26, 29
+local DISC = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local HOVER_SCALE = 1.35
+local REST_ALPHA, HOVER_ALPHA = 0.86, 1.0
+local GLOW = { size = 22, color = { 1.0, 0.82, 0.0, 0.25 } }
+local LAYERS = {
+  { size = 16, color = { 0, 0, 0, 0.55 } }, -- shadow
+  { size = 14, color = { 1.0, 0.82, 0.0, 1 } }, -- rim
+  { size = 11, color = { 0.10, 0.07, 0.03, 0.95 } }, -- inner
+}
+local GLYPH_SIZE = 9
+local GLYPH_DY = 1 -- the shield's point is at the bottom: glyph sits a bit high
+local ATLAS = { pickup = "QuestNormal", turnin = "QuestTurnin" }
+local FALLBACK = {
+  pickup = "Interface\\GossipFrame\\AvailableQuestIcon",
+  turnin = "Interface\\GossipFrame\\ActiveQuestIcon",
+}
+
+-- Difficulty colour names (Engine/Difficulty.lua) -> RGB, like the quest log.
+local COLORS = {
+  grey = { 0.5, 0.5, 0.5 },
+  green = { 0.25, 0.75, 0.25 },
+  yellow = { 1.0, 0.82, 0.0 },
+  orange = { 1.0, 0.5, 0.25 },
+  red = { 1.0, 0.1, 0.1 },
+}
+MapPins.COLORS = COLORS -- shared with the book (UI/Style.lua DIFFICULTY)
+local GREY_TEXT = { 0.62, 0.62, 0.62 }
+local LIGHT_TEXT = { 0.8, 0.8, 0.8 }
+
+---------------------------------------------------------------------------
+-- Pure model.
+---------------------------------------------------------------------------
+local function giverName(db, place)
+  if not (place and place.kind == 1 and place.id) then return nil end
+  local npc = method(db, "npc", place.id)
+  return type(npc) == "table" and npc[1] or nil
+end
+
+local function questEntry(db, row, section, place)
+  return {
+    id = row.questID, name = row.name, level = row.level, color = row.color,
+    section = section.title, sectionKey = section.key, xp = row.xp,
+    giverName = giverName(db, place),
+  }
+end
+
+local function findPin(pins, place)
+  for _, p in ipairs(pins) do
+    if p.mapID == place.mapID and math.abs(p.x - place.x) <= MERGE_DISTANCE
+        and math.abs(p.y - place.y) <= MERGE_DISTANCE then
+      return p
+    end
+  end
+  return nil
+end
+
+local function addQuest(pins, kind, place, quest)
+  local pin = findPin(pins, place)
+  if not pin then
+    pin = { mapID = place.mapID, x = place.x, y = place.y, kind = kind, quests = {} }
+    pins[#pins + 1] = pin
+  end
+  if kind == "turnin" then pin.kind = "turnin" end
+  pin.quests[#pin.quests + 1] = quest
+end
+
+local function hasPoint(place, mapID)
+  return type(place) == "table" and place.mapID == mapID
+    and type(place.x) == "number" and type(place.y) == "number"
+end
+
+-- A quest from a route step (no section row): the section column shows the
+-- zone name, or "This zone".
+local function routeEntry(db, q, mapID, place, state)
+  local z = method(db, "zone", mapID)
+  local color
+  if ns.Difficulty and state then
+    color = ns.Difficulty.color(q.level, state.level, state.greyAtOrBelow)
+  end
+  return {
+    id = q.id, name = q.name, level = q.level, color = color,
+    section = type(z) == "table" and z.name or "This zone", sectionKey = "route",
+    xp = q.xp, giverName = giverName(db, place),
+  }
+end
+
+-- rec: Recommendation (sections); steps: the zone route of mapID (optional,
+-- Engine.route steps); state: player state (optional, for route quest colours).
+function MapPins.build(rec, db, mapID, steps, state)
+  local pins = {}
+  if mapID == nil then return pins end
+  local seen = {} -- "kind:questID" already on a pin
+  for _, section in ipairs(type(rec) == "table" and rec.sections or {}) do
+    local kind
+    if section.key == TURNIN_SECTION then
+      kind = "turnin"
+    elseif PICKUP_SECTIONS[section.key] then
+      kind = "pickup"
+    end
+    if kind then
+      for _, row in ipairs(section.rows or {}) do
+        local place
+        if kind == "turnin" then
+          local q = method(db, "quest", row.questID)
+          place = type(q) == "table" and q.turnIn or nil
+        else
+          place = row.giver
+        end
+        if hasPoint(place, mapID) then
+          seen[kind .. ":" .. tostring(row.questID)] = true
+          addQuest(pins, kind, place, questEntry(db, row, section, place))
+        end
+      end
+    end
+  end
+  for _, step in ipairs(steps or {}) do
+    for _, action in ipairs(step.actions or {}) do
+      local id, akind = action[1], action[2]
+      local kind = (akind == "pickup" or akind == "turnin") and akind or nil
+      -- A planned turn-in of a quest the player has not accepted yet is not
+      -- actionable and would turn its giver's "!" into a "?": skip it.
+      local planned = kind == "turnin" and state and type(state.log) == "table"
+        and state.log[id] == nil
+      -- done actions (already picked up / turned in) get no pin
+      local done = state and ns.Advisor and ns.Advisor.actionDone
+        and ns.Advisor.actionDone(id, akind, state)
+      if kind and not planned and not done and not seen[kind .. ":" .. tostring(id)] then
+        local q = method(db, "quest", id)
+        if type(q) == "table" then
+          local place = (kind == "turnin") and q.turnIn or q.giver
+          if hasPoint(place, mapID) then
+            seen[kind .. ":" .. tostring(id)] = true
+            addQuest(pins, kind, place, routeEntry(db, q, mapID, place, state))
+          end
+        end
+      end
+    end
+  end
+  return pins
+end
+
+---------------------------------------------------------------------------
+-- Model for what the map shows right now.
+---------------------------------------------------------------------------
+-- The zone route of the displayed map: the advisor's frozen per-zone plan
+-- (shared with the book's zone page), so refreshes never recompute it. nil in
+-- combat without a plan; a throwing plan goes to the error handler.
+local function zoneRoute(A, mapID)
+  if type(A) ~= "table" or type(A.plan) ~= "function" then return nil end
+  local ok, plan = pcall(A.plan, mapID)
+  if not ok then
+    geterrorhandler()(plan)
+    return nil
+  end
+  return type(plan) == "table" and plan.steps or nil
+end
+
+-- The "Show on map" pin (Nav): one entry { mapID, x, y, kind, quests }, shown
+-- on its own map even when pinsAll is off.
+local focus
+local FOCUS_SECTION = "Shown on map"
+
+-- F26: the focus goes once its quest is done, or (for a pickup) accepted.
+local function focusStale(state)
+  local q = focus.quests[1]
+  local id = q and q.id
+  if not (id and type(state) == "table") then return false end
+  if type(state.completed) == "table" and state.completed[id] then return true end
+  return focus.kind == "pickup" and type(state.log) == "table" and state.log[id] ~= nil
+end
+
+local function addFocus(pins, mapID, state)
+  if not focus then return end
+  if focusStale(state) then focus = nil; return end
+  if focus.mapID ~= mapID then return end
+  local place = { mapID = focus.mapID, x = focus.x, y = focus.y }
+  for _, q in ipairs(focus.quests) do
+    local dup = false
+    local pin = findPin(pins, place)
+    for _, have in ipairs(pin and pin.quests or {}) do
+      if q.id ~= nil and have.id == q.id then dup = true end
+    end
+    if pin and dup then
+      if focus.kind == "turnin" then pin.kind = "turnin" end
+    else
+      addQuest(pins, focus.kind, place, q)
+    end
+  end
+end
+
+-- The pins the map shows for mapID: the recommended quests (pinsAll) plus the
+-- focus pin.
+function MapPins.model(mapID)
+  local A = ns.Advisor
+  local last = A and A.last
+  local pins = {}
+  if ns.Settings.get("pinsAll") and last and last.rec then
+    pins = MapPins.build(last.rec, A.db, mapID, zoneRoute(A, mapID), last.state)
+  end
+  addFocus(pins, mapID, last and last.state)
+  return pins
+end
+
+local function currentModel(mapID) return MapPins.model(mapID) end
+
+local function currentMapID()
+  if method(WorldMapFrame, "IsShown") then return method(WorldMapFrame, "GetMapID") end
+  local best = type(C_Map) == "table" and call(C_Map.GetBestMapForUnit, "player")
+  return best or method(WorldMapFrame, "GetMapID")
+end
+
+-- Pins the map would show for the current map (for /advisor pins).
+function MapPins.count()
+  local id = currentMapID()
+  return id and #currentModel(id) or 0
+end
+
+local function mapName(mapID)
+  local z = method(ns.Advisor and ns.Advisor.db, "zone", mapID)
+  if type(z) == "table" and z.name then return z.name end
+  local info = type(C_Map) == "table" and call(C_Map.GetMapInfo, mapID)
+  if type(info) == "table" and info.name then return info.name end
+  return "map " .. tostring(mapID)
+end
+
+-- The /advisor pins line.
+function MapPins.describe()
+  local last = ns.Advisor and ns.Advisor.last
+  if not (last and last.rec) then return "No recommendation yet: type /advisor first" end
+  local id = currentMapID()
+  if not id then return "No map to count pins on." end
+  return string.format("Pins on map %s (%s): %d", mapName(id), tostring(id), #currentModel(id))
+end
+
+---------------------------------------------------------------------------
+-- Pin frame.
+---------------------------------------------------------------------------
+-- A centred disc of the given size and colour. Uses the alpha-masked disc
+-- texture; when the client rejects it (SetTexture false, or no texture
+-- afterwards) the layer becomes a plain colour square, never invisible.
+local function paintDisc(tex, size, color)
+  method(tex, "SetSize", size, size)
+  method(tex, "ClearAllPoints")
+  method(tex, "SetPoint", "CENTER", 0, 0)
+  local ok = method(tex, "SetTexture", DISC)
+  local missing = false
+  if ok ~= false and type(tex) == "table" and type(tex.GetTexture) == "function" then
+    local good, got = pcall(tex.GetTexture, tex)
+    missing = good and got == nil
+  end
+  if ok == false or missing then
+    method(tex, "SetColorTexture", color[1], color[2], color[3], color[4])
+  else
+    method(tex, "SetVertexColor", color[1], color[2], color[3], color[4])
+  end
+end
+
+-- True when tex shows a texture: SetTexture did not report failure and the
+-- texture reads back non-nil.
+local function loaded(tex, path)
+  local ok = method(tex, "SetTexture", path)
+  if ok == false then return false end
+  if type(tex) == "table" and type(tex.GetTexture) == "function" then
+    local good, got = pcall(tex.GetTexture, tex)
+    if good and got == nil then return false end
+  end
+  return true
+end
+
+local function place(tex, w, h)
+  method(tex, "SetSize", w, h)
+  method(tex, "ClearAllPoints")
+  method(tex, "SetPoint", "CENTER", 0, 0)
+end
+
+-- Medallion fallback: the shield texture did not load.
+local function buildMedallion(pin, glow, layer)
+  pin.laGlow = glow
+  paintDisc(glow, GLOW.size, GLOW.color)
+  method(glow, "Hide")
+  for i, l in ipairs(LAYERS) do paintDisc(layer(-2 + i), l.size, l.color) end
+end
+
+-- Visual holder (a child frame, so scaling it leaves the pin's map position
+-- alone) with the glow, the shield and the glyph. Built once per pin frame
+-- (frames are pooled); falls back to the pin itself without CreateFrame.
+local function ensureHolder(pin)
+  if pin.laHolder then return pin.laHolder end
+  local holder = call(CreateFrame, "Frame", nil, pin) or pin
+  method(holder, "SetAllPoints", pin)
+  -- The holder only draws; the pin keeps the mouse (tooltip, click).
+  if holder ~= pin then method(holder, "EnableMouse", false) end
+  local function layer(sublevel)
+    return method(holder, "CreateTexture", nil, "ARTWORK", nil, sublevel)
+  end
+  local glow, shield = layer(-2), layer(-1)
+  if glow and shield and loaded(shield, SHIELD_TEX) then
+    place(shield, PIN_W, PIN_H)
+    pin.laShield = shield
+    if loaded(glow, GLOW_TEX) then
+      place(glow, GLOW_W, GLOW_H)
+      method(glow, "Hide")
+      pin.laGlow = glow
+    else
+      method(glow, "Hide") -- a missing glow just means no glow
+      pin.laGlow = nil
+    end
+  else
+    method(shield, "Hide") -- unused layer (no texture)
+    pin.laShield = nil
+    buildMedallion(pin, glow, layer)
+  end
+  pin.laGlyph = layer(2)
+  pin.laHolder = holder
+  return holder
+end
+
+-- The kind's atlas when the client has it, else the GossipFrame file.
+local function setGlyph(tex, kind)
+  kind = ATLAS[kind] and kind or "pickup"
+  method(tex, "SetSize", GLYPH_SIZE, GLYPH_SIZE)
+  method(tex, "ClearAllPoints")
+  method(tex, "SetPoint", "CENTER", 0, GLYPH_DY)
+  local found = type(C_Texture) == "table" and call(C_Texture.GetAtlasInfo, ATLAS[kind]) ~= nil
+  if found then
+    method(tex, "SetAtlas", ATLAS[kind])
+  else
+    method(tex, "SetTexture", FALLBACK[kind])
+  end
+end
+
+local function applyKind(pin, kind)
+  ensureHolder(pin)
+  method(pin, "SetSize", PIN_W, PIN_H)
+  setGlyph(pin.laGlyph, kind)
+  method(pin.laHolder, "SetScale", 1)
+  method(pin.laHolder, "SetAlpha", REST_ALPHA)
+  method(pin.laGlow, "Hide")
+end
+
+LevelingAdvisorMapPinMixin = (CreateFromMixins and MapCanvasPinMixin)
+  and CreateFromMixins(MapCanvasPinMixin) or {}
+local Pin = LevelingAdvisorMapPinMixin
+
+function Pin:OnLoad()
+  method(self, "UseFrameLevelType", LEVEL_TYPE)
+  method(self, "SetScalingLimits", 1, 1.0, 1.2)
+  method(self, "SetPassThroughButtons", "RightButton")
+end
+
+function Pin:OnAcquired(entry)
+  self.entry = entry
+  applyKind(self, entry.kind)
+  method(self, "SetPosition", entry.x / 100, entry.y / 100)
+end
+
+function Pin:LAOnEnter()
+  if self.laHolder then
+    method(self.laHolder, "SetScale", HOVER_SCALE)
+    method(self.laHolder, "SetAlpha", HOVER_ALPHA)
+    method(self.laGlow, "Show")
+  end
+  local tip, entry = GameTooltip, self.entry
+  if not (tip and entry) then return end
+  tip:SetOwner(self, "ANCHOR_RIGHT")
+  tip:AddLine("Leveling Advisor")
+  for _, q in ipairs(entry.quests) do
+    local c = COLORS[q.color] or COLORS.yellow
+    tip:AddDoubleLine("[" .. tostring(q.level or "?") .. "] " .. tostring(q.name), q.section or "",
+      c[1], c[2], c[3], GREY_TEXT[1], GREY_TEXT[2], GREY_TEXT[3])
+    local detail = "~" .. tostring(math.floor((q.xp or 0) + 0.5)) .. " XP"
+    if q.giverName then detail = detail .. " \194\183 " .. q.giverName end
+    tip:AddLine(detail, LIGHT_TEXT[1], LIGHT_TEXT[2], LIGHT_TEXT[3])
+  end
+  tip:AddLine("Click: set waypoint", GREY_TEXT[1], GREY_TEXT[2], GREY_TEXT[3])
+  tip:Show()
+end
+
+function Pin:LAOnLeave()
+  if self.laHolder then
+    method(self.laHolder, "SetScale", 1)
+    method(self.laHolder, "SetAlpha", REST_ALPHA)
+    method(self.laGlow, "Hide")
+  end
+  if GameTooltip then GameTooltip:Hide() end
+end
+
+-- pcall that also requires fn to be a function; true when it ran cleanly.
+local function ran(fn, ...)
+  return type(fn) == "function" and pcall(fn, ...) or false
+end
+
+local zoneName = mapName
+
+function MapPins.setWaypoint(entry)
+  local ok = false
+  local point
+  if type(UiMapPoint) == "table" and type(C_Map) == "table" and type(C_SuperTrack) == "table" then
+    local made, p = pcall(UiMapPoint.CreateFromCoordinates, entry.mapID, entry.x / 100, entry.y / 100)
+    if made and p then point = p end
+  end
+  if point then
+    ok = ran(C_Map.SetUserWaypoint, point) and ran(C_SuperTrack.SetSuperTrackedUserWaypoint, true)
+  end
+  if not ok then
+    ns.Util.say("Waypoints are not available on this client.")
+    return
+  end
+  local first = entry.quests[1]
+  ns.Util.say(string.format("Waypoint set: %s (%s %.1f, %.1f)",
+    tostring(first and first.name), zoneName(entry.mapID), entry.x, entry.y))
+end
+
+function Pin:LAOnClick(button)
+  if button ~= nil and button ~= "LeftButton" then return end
+  if self.entry then MapPins.setWaypoint(self.entry) end
+end
+
+-- MapCanvasMixin:AcquirePin replaces the pin's OnMouseUp script with a handler
+-- that calls pin:OnClick(button) (and may route motion through OnMouseEnter /
+-- OnMouseLeave), so the XML scripts above never run on such clients. These
+-- methods cover that path; a client keeps only one OnMouseUp script, so a
+-- click never fires twice.
+function Pin:OnClick(button) self:LAOnClick(button) end
+function Pin:OnMouseEnter() self:LAOnEnter() end
+function Pin:OnMouseLeave() self:LAOnLeave() end
+
+---------------------------------------------------------------------------
+-- Data provider.
+---------------------------------------------------------------------------
+local provider
+
+local function newProvider()
+  local p = CreateFromMixins(MapCanvasDataProviderMixin)
+  function p:RemoveAllData()
+    local map = self:GetMap()
+    if map then map:RemoveAllPinsByTemplate(TEMPLATE) end
+  end
+  function p:RefreshAllData()
+    self:RemoveAllData()
+    local map = self:GetMap()
+    if not map then return end
+    for _, entry in ipairs(currentModel(map:GetMapID())) do
+      -- Under pcall: a failure must not break the map's refresh of all providers.
+      local ok, err = pcall(map.AcquirePin, map, TEMPLATE, entry)
+      if not ok then geterrorhandler()(err) end
+    end
+  end
+  return p
+end
+
+local function refresh()
+  if provider then provider:RefreshAllData() end
+end
+
+-- entry: { mapID, x, y, kind = "pickup"|"turnin", quests = { { id, name, ... } } }
+-- or nil to clear. The pin is drawn with section "Shown on map".
+function MapPins.setFocus(entry)
+  focus = nil
+  if type(entry) == "table" and type(entry.quests) == "table" then
+    focus = { mapID = entry.mapID, x = entry.x, y = entry.y,
+      kind = entry.kind == "turnin" and "turnin" or "pickup", quests = {} }
+    for i, q in ipairs(entry.quests) do
+      local copy = {}
+      for k, v in pairs(q) do copy[k] = v end
+      copy.section, copy.sectionKey = FOCUS_SECTION, "focus"
+      focus.quests[i] = copy
+    end
+  end
+  refresh()
+end
+
+local function safe(fn)
+  return function(...)
+    local ok, err = pcall(fn, ...)
+    if not ok then geterrorhandler()(err) end
+  end
+end
+
+-- Adds the provider to the world map, once. Skips silently when the client
+-- has no world map or data provider API.
+function MapPins.install()
+  if provider then return end
+  if not (type(WorldMapFrame) == "table" and type(WorldMapFrame.AddDataProvider) == "function"
+      and CreateFromMixins and MapCanvasDataProviderMixin) then
+    return
+  end
+  provider = newProvider()
+  WorldMapFrame:AddDataProvider(provider)
+
+  if ns.Advisor and ns.Advisor.onUpdate then ns.Advisor.onUpdate(safe(refresh)) end
+  ns.Settings.onChange(function(key)
+    if key == "pinsAll" then refresh() end
+  end)
+  -- An open world map counts as a shown window, so the scheduler may compute
+  -- (Advisor.setMapShown); a stale or missing result is requested on show.
+  if type(WorldMapFrame.HookScript) == "function" then
+    WorldMapFrame:HookScript("OnShow", safe(function()
+      call(ns.Advisor and ns.Advisor.setMapShown, true)
+      refresh()
+    end))
+    WorldMapFrame:HookScript("OnHide", safe(function()
+      call(ns.Advisor and ns.Advisor.setMapShown, false)
+    end))
+  end
+end
+
+ns.Init.onReady(MapPins.install)

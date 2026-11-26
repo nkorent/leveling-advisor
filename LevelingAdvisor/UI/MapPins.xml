@@ -1,0 +1,12 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+  <!-- Map pin for recommended quests. Visuals are set in OnAcquired (MapPins.lua). -->
+  <Frame name="LevelingAdvisorMapPinTemplate" mixin="LevelingAdvisorMapPinMixin" enableMouse="true" virtual="true">
+    <Size x="16" y="18"/>
+    <Scripts>
+      <OnLoad method="OnLoad"/>
+      <OnEnter method="LAOnEnter"/>
+      <OnLeave method="LAOnLeave"/>
+      <OnMouseUp method="LAOnClick"/>
+    </Scripts>
+  </Frame>
+</Ui>
