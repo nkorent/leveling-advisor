@@ -39,7 +39,7 @@ jobs:
         if: github.event_name == 'push' || inputs.build_only
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq luajit lua5.1 liblua5.1-0-dev luarocks zip jq
+          sudo apt-get install -y -qq luajit lua5.1 liblua5.1-0-dev luarocks zip jq libxml2-utils
           sudo luarocks --lua-version=5.1 install busted
 
       - name: Check the tag matches the TOC version
