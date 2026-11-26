@@ -12,6 +12,10 @@ on:
         description: "Only list CurseForge game versions (no build, no upload)"
         type: boolean
         default: true
+      build_only:
+        description: "Build and test the zip without uploading"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,7 +36,7 @@ jobs:
         run: tools/curseforge-upload.sh --list-versions
 
       - name: Install Lua tooling
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || inputs.build_only
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq luajit lua5.1 liblua5.1-0-dev luarocks zip jq
@@ -49,7 +53,7 @@ jobs:
           fi
 
       - name: Build
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || inputs.build_only
         run: tools/build.sh
 
       - name: Upload to CurseForge
