@@ -15,7 +15,7 @@ API="https://wow.curseforge.com/api"
 versions_json="$(curl -fsS -H "X-Api-Token: $CF_API_KEY" "$API/game/versions")"
 
 if [ "${2:-}" = "--list-versions" ] || [ "${1:-}" = "--list-versions" ]; then
-  echo "$versions_json" | jq -r '.[] | "\(.id)\t\(.name)"' | sort -t$'\t' -k2 -V | tail -n 60
+  echo "$versions_json" | jq -r ".[] | \"\\(.id)\\t\\(.name)\"" | sort -t$'\t' -k2 -V
   exit 0
 fi
 
