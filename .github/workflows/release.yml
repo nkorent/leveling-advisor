@@ -1,0 +1,60 @@
+name: Release to CurseForge
+
+# Push a tag "v<version>" that matches "## Version:" in the TOC to build the zip and
+# upload it to CurseForge. Run it by hand with "list versions" to see CurseForge's
+# game version names (for the CF_GAME_VERSION repository variable).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      list_versions:
+        description: "Only list CurseForge game versions (no build, no upload)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      CF_PROJECT_ID: ${{ vars.CF_PROJECT_ID }}
+      CF_GAME_VERSION: ${{ vars.CF_GAME_VERSION }}
+      CF_RELEASE_TYPE: ${{ vars.CF_RELEASE_TYPE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: List CurseForge game versions
+        if: github.event_name == 'workflow_dispatch' && inputs.list_versions
+        run: tools/curseforge-upload.sh --list-versions
+
+      - name: Install Lua tooling
+        if: github.event_name == 'push'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq luajit lua5.1 liblua5.1-0-dev luarocks zip jq
+          sudo luarocks --lua-version=5.1 install busted
+
+      - name: Check the tag matches the TOC version
+        if: github.event_name == 'push'
+        run: |
+          toc="$(sed -n 's/^## Version:[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p' LevelingAdvisor/LevelingAdvisor.toc | head -n 1)"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$toc" != "$tag" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match TOC version $toc" >&2
+            exit 1
+          fi
+
+      - name: Build
+        if: github.event_name == 'push'
+        run: tools/build.sh
+
+      - name: Upload to CurseForge
+        if: github.event_name == 'push'
+        run: |
+          zip="dist/LevelingAdvisor-${GITHUB_REF_NAME#v}.zip"
+          export CF_CHANGELOG="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
+          tools/curseforge-upload.sh "$zip"
