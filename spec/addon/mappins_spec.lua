@@ -20,7 +20,7 @@ end
 
 local function row(id, mapID, x, y, extra)
   local r = {
-    questID = id, name = "Quest " .. id, level = 5, color = "yellow", xp = 100 + id,
+    questID = id, name = "Quest " .. id, level = 5, color = "yellow", xp = 100 + id, state = "available",
     giver = { mapID = mapID, x = x, y = y, kind = 1, id = 10 },
   }
   for k, v in pairs(extra or {}) do r[k] = v end
@@ -87,7 +87,7 @@ describe("MapPins.build", function()
   end)
 
   it("skips the turn-in row when the quest has no turn-in point", function()
-    local r = rec(sec("turnin", row(8, 1411, 10, 10)))
+    local r = rec(sec("turnin", row(8, 1411, 10, 10, { state = "complete" })))
     assert.same({}, build(r, db, 1411))
   end)
 
@@ -112,7 +112,7 @@ describe("MapPins.build", function()
 
   it("lets the turn-in kind win a merged pin", function()
     local r = rec(
-      sec("turnin", row(7, 1411, 0, 0)),
+      sec("turnin", row(7, 1411, 0, 0, { state = "complete" })),
       sec("here", row(1, 1411, 60.2, 61.1)))
     local pins = build(r, db, 1411)
     assert.equals(1, #pins)
@@ -123,7 +123,7 @@ describe("MapPins.build", function()
   it("turn-in wins even when the pickup came first", function()
     local r = rec(
       sec("here", row(1, 1411, 60.2, 61.1)),
-      sec("turnin", row(7, 1411, 0, 0)))
+      sec("turnin", row(7, 1411, 0, 0, { state = "complete" })))
     local pins = build(r, db, 1411)
     assert.equals(1, #pins)
     assert.equals("turnin", pins[1].kind)
@@ -144,6 +144,26 @@ describe("MapPins.build", function()
   it("ignores unknown section keys", function()
     local r = rec(sec("zones", row(1, 1411, 10, 10)))
     assert.same({}, build(r, db, 1411))
+  end)
+
+  -- C1 (final review): a "!" only where the player can pick the quest up now.
+  it("gives no pickup pin to a soon row or an in-progress row", function()
+    local r = rec(
+      sec("class", row(1, 1411, 10, 10, { soon = true })),
+      sec("here", row(2, 1411, 20, 20, { state = "progress" }), row(3, 1411, 30, 30, { state = "complete" }),
+        row(4, 1411, 40, 40)))
+    local pins = build(r, db, 1411)
+    assert.equals(1, #pins)
+    assert.equals(4, pins[1].quests[1].id)
+  end)
+
+  it("with a player state, pins a section row only when the quest can be picked up now", function()
+    local ns = load()
+    ns.Advisor = { canPickUp = function(_, id) return id == 2 end }
+    local r = rec(sec("here", row(1, 1411, 10, 10), row(2, 1411, 20, 20)))
+    local pins = ns.MapPins.build(r, db, 1411, nil, { level = 5, log = {}, completed = {} })
+    assert.equals(1, #pins)
+    assert.equals(2, pins[1].quests[1].id)
   end)
 
   it("leaves giverName nil for object givers and unknown NPCs", function()
@@ -202,12 +222,37 @@ describe("MapPins.build with a zone route", function()
     assert.equals("Turner Twenty", pins[1].quests[1].giverName)
   end)
 
+  -- every quest here can be picked up unless a spec says otherwise
+  local function pickable(ns, fn)
+    ns.Advisor = { canPickUp = fn or function() return true end }
+    return ns.MapPins.build
+  end
+
   it("skips route turn-ins of quests that are not in the log yet", function()
+    build = pickable((load()))
     local pins = build({}, db, 1411, { step({ 31, "pickup" }, { 31, "turnin" }) }, { level = 1, log = {} })
     assert.equals(1, #pins)
     assert.equals("pickup", pins[1].kind)
-    pins = build({}, db, 1411, { step({ 31, "turnin" }) }, { level = 1, log = { [31] = {} } })
+    pins = build({}, db, 1411, { step({ 31, "turnin" }) }, { level = 1, log = { [31] = { complete = true } } })
     assert.equals("turnin", pins[1].kind)
+  end)
+
+  -- C1: "?" only once the quest is complete; an in-progress quest gets no pin.
+  it("skips route turn-ins of quests still in progress", function()
+    build = pickable((load()))
+    local pins = build({}, db, 1411, { step({ 31, "turnin" }) }, { level = 1, log = { [31] = { complete = false } } })
+    assert.same({}, pins)
+  end)
+
+  -- C1: a later chain step (prerequisite not done) is no pickup yet.
+  it("skips route pickups the player cannot pick up now", function()
+    build = pickable((load()), function(_, id) return id ~= 31 end)
+    assert.same({}, build({}, db, 1411, { step({ 31, "pickup" }) }, { level = 1, log = {}, completed = {} }))
+  end)
+
+  it("excludes route pickups when a state is given but nothing can check them", function()
+    local ns = load()
+    assert.same({}, ns.MapPins.build({}, db, 1411, { step({ 31, "pickup" }) }, { level = 1, log = {} }))
   end)
 
   it("gives no pin for objectives or quests on another map", function()
@@ -233,6 +278,7 @@ describe("MapPins.build with a zone route", function()
 
   it("colours route quests relative to the player level", function()
     local ns = load()
+    pickable(ns)
     ns.Difficulty = { color = function(q, p) return q .. "/" .. p end }
     local pins = ns.MapPins.build({}, db, 1411, { step({ 31, "pickup" }) }, { level = 9 })
     assert.equals("2/9", pins[1].quests[1].color)

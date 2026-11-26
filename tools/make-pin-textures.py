@@ -4,9 +4,9 @@
 Writes uncompressed 32-bit TGA files (64x64, alpha, top-left origin, y down):
   PinShield.tga      map pin: dark shield with a gold rim and a faint inner highlight
   PinShieldGlow.tga  the same shape in gold with a soft outer glow
-  BookmarkTab.tga    the book's bookmark tab on the quest log: dark leather with
-                     a gold rim on the top, right and bottom edges (the left edge
-                     tucks under the quest log frame)
+  BookmarkTab.tga    the book's side tab on the quest log (shown at 36x40): dark body,
+                     bronze-gold rim on the top, right and bottom edges, rounded right
+                     corners; the left edge is open (it tucks under the frame)
 
 Usage: tools/make-pin-textures.py [output-dir]
        (default: LevelingAdvisor/Media next to this script's repository)
@@ -31,15 +31,15 @@ GLOW_FALLOFF = 6.0     # pixels
 SHIELD_HEIGHT = 62.0   # px, outer height of the shield including its rim
 GLOW_SHIELD_HEIGHT = 40.0  # glow texture is shown at 26x29 over a 16x18 pin
 
-# Bookmark tab, in pixels (y down): body x 0..56, y 4..60, right corners rounded.
-BOOK_X0, BOOK_X1, BOOK_Y0, BOOK_Y1 = 0.0, 56.0, 4.0, 60.0
-BOOK_RADIUS = 10.0
+# Bookmark tab, in pixels (y down). The 64x64 texture is shown at 36x40, so the body
+# fills it; right corners rounded, the left edge is open (it tucks under the frame).
+BOOK_X0, BOOK_X1, BOOK_Y0, BOOK_Y1 = 0.0, 62.0, 1.0, 63.0
+BOOK_RADIUS = 12.0
 BOOK_RIM = 2.0
-BOOK_TOP = (90, 61, 28)      # fill colour at y 4 ...
-BOOK_BOTTOM = (58, 37, 18)   # ... and at y 60
-BOOK_ALPHA = 247 / 255
-BOOK_HILITE_Y = 7            # 1 px highlight line (HILITE colour), x 0..50
-BOOK_HILITE_X1 = 50
+BOOK_RIM_COLOR = (222, 178, 52)  # bronze-gold
+BOOK_TOP = (40, 29, 18)          # near black-brown at the top ...
+BOOK_BOTTOM = (24, 17, 10)       # ... and at the bottom
+BOOK_ALPHA = 0.9
 
 
 def bezier(p0, p1, p2, p3, n=24):
@@ -206,9 +206,7 @@ def render_bookmark():
         fill = [BOOK_TOP[i] + (BOOK_BOTTOM[i] - BOOK_TOP[i]) * t for i in range(3)]
         c = over([0.0, 0.0, 0.0, 0.0], fill, BOOK_ALPHA)
         if edge < BOOK_RIM:
-            c = over(c, GOLD, 1.0)
-        if BOOK_HILITE_Y <= y < BOOK_HILITE_Y + 1 and x < BOOK_HILITE_X1:
-            c = over(c, HILITE[:3], HILITE[3])
+            c = over(c, BOOK_RIM_COLOR, 1.0)
         return c
 
     return [[supersample(px, py, sample) for px in range(SIZE)] for py in range(SIZE)]

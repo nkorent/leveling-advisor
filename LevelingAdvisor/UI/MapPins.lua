@@ -112,8 +112,34 @@ local function routeEntry(db, q, mapID, place, state)
   }
 end
 
+-- C1 (spec 2, first anti-goal): a "!" only for a quest the player can pick up
+-- right now (Advisor.canPickUp: Eligibility "eligible"). With a player state
+-- and nothing to check it with, nothing is a pickup; without a state (the pure
+-- model on its own) the rows' own state decides.
+local function pickable(db, id, state)
+  if state == nil then return true end
+  local A = ns.Advisor
+  return type(A) == "table" and type(A.canPickUp) == "function" and A.canPickUp(db, id, state) == true
+end
+
+-- A "?" only once the quest is complete in the log.
+local function turnInReady(id, state)
+  if state == nil then return true end
+  local entry = type(state.log) == "table" and state.log[id] or nil
+  return type(entry) == "table" and entry.complete and true or false
+end
+
+-- Section rows that may become pins: turn-in rows (complete) at the turn-in;
+-- available rows (not "soon", not in the log) at the giver. In-progress rows
+-- get no pin: Blizzard's quest POI shows their objectives.
+local function rowPinnable(db, row, kind, state)
+  if kind == "turnin" then return row.state == "complete" and turnInReady(row.questID, state) end
+  return row.state == "available" and not row.soon and pickable(db, row.questID, state)
+end
+
 -- rec: Recommendation (sections); steps: the zone route of mapID (optional,
--- Engine.route steps); state: player state (optional, for route quest colours).
+-- Engine.route steps); state: player state (the pickup and turn-in checks and
+-- the route quest colours; optional for the pure model).
 function MapPins.build(rec, db, mapID, steps, state)
   local pins = {}
   if mapID == nil then return pins end
@@ -134,7 +160,7 @@ function MapPins.build(rec, db, mapID, steps, state)
         else
           place = row.giver
         end
-        if hasPoint(place, mapID) then
+        if hasPoint(place, mapID) and rowPinnable(db, row, kind, state) then
           seen[kind .. ":" .. tostring(row.questID)] = true
           addQuest(pins, kind, place, questEntry(db, row, section, place))
         end
@@ -145,14 +171,17 @@ function MapPins.build(rec, db, mapID, steps, state)
     for _, action in ipairs(step.actions or {}) do
       local id, akind = action[1], action[2]
       local kind = (akind == "pickup" or akind == "turnin") and akind or nil
-      -- A planned turn-in of a quest the player has not accepted yet is not
-      -- actionable and would turn its giver's "!" into a "?": skip it.
-      local planned = kind == "turnin" and state and type(state.log) == "table"
-        and state.log[id] == nil
+      -- A planned turn-in of a quest the player has not accepted yet, or has
+      -- not finished, is not actionable (and would turn its giver's "!" into a
+      -- "?"): skip it.
+      local planned = kind == "turnin" and not turnInReady(id, state)
       -- done actions (already picked up / turned in) get no pin
       local done = state and ns.Advisor and ns.Advisor.actionDone
         and ns.Advisor.actionDone(id, akind, state)
-      if kind and not planned and not done and not seen[kind .. ":" .. tostring(id)] then
+      -- a later chain step (prerequisite not done yet) is no pickup yet; its
+      -- pin appears on the compute after the prerequisite's turn-in
+      local latent = kind == "pickup" and not done and not pickable(db, id, state)
+      if kind and not planned and not done and not latent and not seen[kind .. ":" .. tostring(id)] then
         local q = method(db, "quest", id)
         if type(q) == "table" then
           local place = (kind == "turnin") and q.turnIn or q.giver
@@ -370,10 +399,53 @@ LevelingAdvisorMapPinMixin = (CreateFromMixins and MapCanvasPinMixin)
   and CreateFromMixins(MapCanvasPinMixin) or {}
 local Pin = LevelingAdvisorMapPinMixin
 
+local function inCombat()
+  return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
+end
+
+-- I4: SetPassThroughButtons is restricted for addon code in combat on modern
+-- engines: a blocked action ("Interface action failed because of an AddOn"),
+-- not a Lua error, so pcall does not help. Our OnLoad and MapCanvas's own
+-- AcquirePin both call it on our pins (HereBeDragons-Pins stubs it for the
+-- same reason). The mixin method below shadows the frame's own: out of
+-- combat it calls the frame method at once (right-click through a pin still
+-- zooms the map out); in combat it waits for PLAYER_REGEN_ENABLED.
+local pendingPass = setmetatable({}, { __mode = "k" }) -- pin -> { n, ... }
+
+local function framePassThrough(pin, ...)
+  local mt = getmetatable(pin)
+  local index = type(mt) == "table" and mt.__index or nil
+  local fn = type(index) == "table" and index.SetPassThroughButtons or nil
+  if type(fn) == "function" then pcall(fn, pin, ...) end
+end
+
+function Pin:SetPassThroughButtons(...)
+  if inCombat() then
+    pendingPass[self] = { n = select("#", ...), ... }
+    return
+  end
+  pendingPass[self] = nil
+  framePassThrough(self, ...)
+end
+
+local function flushPassThrough()
+  if inCombat() then return end
+  local pins = {}
+  for pin, args in pairs(pendingPass) do pins[pin] = args end
+  for pin, args in pairs(pins) do
+    pendingPass[pin] = nil
+    framePassThrough(pin, unpack(args, 1, args.n))
+  end
+end
+
+if ns.Events and type(ns.Events.on) == "function" then
+  ns.Events.on("PLAYER_REGEN_ENABLED", flushPassThrough)
+end
+
 function Pin:OnLoad()
   method(self, "UseFrameLevelType", LEVEL_TYPE)
   method(self, "SetScalingLimits", 1, 1.0, 1.2)
-  method(self, "SetPassThroughButtons", "RightButton")
+  self:SetPassThroughButtons("RightButton")
 end
 
 function Pin:OnAcquired(entry)
@@ -382,7 +454,11 @@ function Pin:OnAcquired(entry)
   method(self, "SetPosition", entry.x / 100, entry.y / 100)
 end
 
+-- The pin whose tooltip is up: a pin released by a map refresh takes it along.
+local hoverPin
+
 function Pin:LAOnEnter()
+  hoverPin = self
   if self.laHolder then
     method(self.laHolder, "SetScale", HOVER_SCALE)
     method(self.laHolder, "SetAlpha", HOVER_ALPHA)
@@ -404,13 +480,35 @@ function Pin:LAOnEnter()
   tip:Show()
 end
 
-function Pin:LAOnLeave()
-  if self.laHolder then
-    method(self.laHolder, "SetScale", 1)
-    method(self.laHolder, "SetAlpha", REST_ALPHA)
-    method(self.laGlow, "Hide")
+local function rest(pin)
+  if pin.laHolder then
+    method(pin.laHolder, "SetScale", 1)
+    method(pin.laHolder, "SetAlpha", REST_ALPHA)
+    method(pin.laGlow, "Hide")
   end
+end
+
+function Pin:LAOnLeave()
+  if hoverPin == self then hoverPin = nil end
+  rest(self)
   if GameTooltip then GameTooltip:Hide() end
+end
+
+-- Hides the tooltip of a pin that goes away under the mouse (map refresh),
+-- only when that pin still owns it.
+local function releaseHover(pin)
+  if not hoverPin or (pin and pin ~= hoverPin) then return end
+  local owner = hoverPin
+  hoverPin = nil
+  rest(owner)
+  if GameTooltip and method(GameTooltip, "GetOwner") == owner then method(GameTooltip, "Hide") end
+end
+
+local baseOnReleased = type(MapCanvasPinMixin) == "table" and MapCanvasPinMixin.OnReleased or nil
+
+function Pin:OnReleased()
+  releaseHover(self)
+  if type(baseOnReleased) == "function" then pcall(baseOnReleased, self) end
 end
 
 -- pcall that also requires fn to be a function; true when it ran cleanly.
@@ -461,6 +559,7 @@ local provider
 local function newProvider()
   local p = CreateFromMixins(MapCanvasDataProviderMixin)
   function p:RemoveAllData()
+    releaseHover(nil)
     local map = self:GetMap()
     if map then map:RemoveAllPinsByTemplate(TEMPLATE) end
   end

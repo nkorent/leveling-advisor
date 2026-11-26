@@ -74,42 +74,107 @@ function Advisor.actionDone(questID, kind, state)
   return false
 end
 
+local function check(db, questID, state)
+  local E = ns.Eligibility
+  if type(state) ~= "table" or type(E) ~= "table" or type(E.check) ~= "function" then return nil end
+  local q = ns.Util.method(db, "quest", questID)
+  if type(q) ~= "table" then return nil end
+  local ok, result, reason = pcall(E.check, db, q, state)
+  if not ok then return nil end
+  return result, reason, q
+end
+
+-- Whether the player can pick the quest up right now (Eligibility "eligible").
+-- The one rule for every "!" the addon shows (map pins, route lines): a later
+-- chain step, a "soon" quest, a quest in the log or any doubt is not a pickup.
+function Advisor.canPickUp(db, questID, state)
+  return check(db, questID, state) == "eligible"
+end
+
+-- Whether a planned quest can no longer be done at all: not in the log, not
+-- completed, and ruled out for good since the plan was made (an exclusive
+-- branch taken, a blocker completed, a breadcrumb's target picked up,
+-- ignored, ...). A chain step waiting for its prerequisite is not dropped,
+-- unless that prerequisite is dropped itself.
+local function dropped(db, questID, state, depth)
+  if depth > 8 then return false end
+  local completed, log = state.completed, state.log
+  if (type(completed) == "table" and completed[questID]) or (type(log) == "table" and log[questID]) then
+    return false
+  end
+  local result, reason, q = check(db, questID, state)
+  if result == nil and reason == nil then return false end -- unknown: not ours to drop
+  if result == "eligible" or result == "soon" then return false end
+  if reason ~= "prereq" then return true end
+  local prereq = q.prereq or {}
+  for _, p in ipairs(prereq.all or {}) do
+    if dropped(db, p, state, depth + 1) then return true end
+  end
+  local any = prereq.any or {}
+  if #any == 0 then return false end
+  for _, p in ipairs(any) do
+    if not dropped(db, p, state, depth + 1) then return false end
+  end
+  return true
+end
+
+function Advisor.questDropped(db, questID, state)
+  if type(state) ~= "table" then return false end
+  return dropped(db, questID, state, 0)
+end
+
 -- One frozen route plan per zone, shared by the zone page and the map pins.
 local plans = {}
 
 local function planKey(last)
   local state, rec = last.state or {}, last.rec or {}
   local settings = state.settings or {}
-  local ignored = 0
-  for _ in pairs(state.ignored or {}) do ignored = ignored + 1 end
+  -- the ignored set itself: ignoring one quest and unignoring another changes the plan
+  local ignored = {}
+  for id, on in pairs(type(state.ignored) == "table" and state.ignored or {}) do
+    if on then ignored[#ignored + 1] = tostring(id) end
+  end
+  table.sort(ignored)
   return table.concat({ tostring(state.level), tostring(settings.elite), tostring(settings.dungeons),
-    ignored, rec.dungeon and rec.dungeon.key or "-" }, "|")
+    table.concat(ignored, ","), rec.dungeon and rec.dungeon.key or "-" }, "|")
 end
 
-local function allDone(plan, state)
-  if #plan.steps == 0 then return false end
+-- open: some action is neither done nor dropped. dropped: some open-looking
+-- action belongs to a quest ruled out since the plan was made.
+local function scan(plan, state, db)
+  local open, anyDropped = false, false
   for _, step in ipairs(plan.steps) do
     for _, a in ipairs(step.actions or {}) do
-      if not Advisor.actionDone(a[1], a[2], state) then return false end
+      if not Advisor.actionDone(a[1], a[2], state) then
+        if Advisor.questDropped(db, a[1], state) then anyDropped = true else open = true end
+      end
     end
   end
-  return true
+  return open, anyDropped
 end
 
--- plan = { mapID, steps, key }. Kept while the key matches and some step is
--- open; replanned otherwise. In combat (or without a route) the stale plan
--- stays.
+-- plan = { mapID, steps, key }. Kept while the key matches, some step is
+-- open and no planned quest was ruled out; replanned otherwise. In combat (or
+-- without a route) the stale plan stays.
 function Advisor.plan(mapID)
   local last = Advisor.last
   if not last then return nil end
   local plan = plans[mapID]
   if plan and plan.key == planKey(last) then
-    -- an all-done plan is rebuilt once per advisor result, not on every call
-    if not allDone(plan, last.state) or plan.last == last then return plan end
+    -- checked once per advisor result; a stale plan is rebuilt once per
+    -- result too, not on every call
+    if plan.checked ~= last then
+      local open, anyDropped = scan(plan, last.state, Advisor.db)
+      plan.stale = anyDropped or (#plan.steps > 0 and not open)
+      plan.checked = last
+    end
+    if not plan.stale or plan.last == last then return plan end
   end
   local steps = Advisor.route(mapID)
   if steps == nil then return plan end
   plan = { mapID = mapID, steps = steps, key = planKey(last), last = last }
+  plan.checked = last
+  plan.stale = false
   plans[mapID] = plan
   return plan
 end

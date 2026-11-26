@@ -244,7 +244,11 @@ describe("Advisor", function()
       run(env, "unignore 2")
       assert.same({ [1] = true, [3] = true }, ns.chardb.ignored)
       assert.equals(PREFIX .. "No longer ignoring quest 2.", out[#out])
+      local n = 0
+      local orig = ns.Advisor.scheduler.request
+      ns.Advisor.scheduler.request = function(...) n = n + 1; return orig(...) end
       run(env, "unignore all")
+      assert.equals(1, n)
       assert.same({}, ns.chardb.ignored)
       assert.equals(PREFIX .. "Cleared all ignored quests.", out[#out])
     end)

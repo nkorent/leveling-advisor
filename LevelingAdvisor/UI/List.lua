@@ -24,11 +24,17 @@ function List.new(parent, init)
   end)
   if not (ok and type(list) == "table") then return nil end
 
-  -- Keeps the scroll position when the data changes (the advisor recomputes
-  -- often); fail-soft when the client lacks the constant or the argument.
-  function list:set(elements)
+  -- identity names the content (a zone, a dungeon, a search query; nil for a
+  -- list with one content). A refresh of the same content keeps the scroll
+  -- position (the advisor recomputes often); other content starts at the
+  -- top. Fail-soft when the client lacks the constant or the argument.
+  function list:set(elements, identity)
     local dp = CreateDataProvider(elements)
-    local keep = type(ScrollBoxConstants) == "table" and ScrollBoxConstants.RetainScrollPosition
+    local same = identity == self.identity
+    self.identity = identity
+    local consts = type(ScrollBoxConstants) == "table" and ScrollBoxConstants or {}
+    local keep
+    if same then keep = consts.RetainScrollPosition else keep = consts.DiscardScrollPosition end
     if not pcall(self.box.SetDataProvider, self.box, dp, keep) then
       pcall(self.box.SetDataProvider, self.box, dp)
     end

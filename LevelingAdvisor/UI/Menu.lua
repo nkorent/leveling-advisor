@@ -14,7 +14,7 @@ local function questName(questID)
   return q and q.name or ("quest " .. tostring(questID))
 end
 
-function Menu.entries(db, questID, state)
+function Menu.entries(questID)
   local ignored = ns.chardb and ns.chardb.ignored and ns.chardb.ignored[questID]
   return {
     { label = "Show on Map", action = "show" },
@@ -107,13 +107,12 @@ local ACTIONS = {
 
 function Menu.open(owner, questID)
   if type(MenuUtil) ~= "table" or type(MenuUtil.CreateContextMenu) ~= "function" then return end
-  local A = ns.Advisor
-  local entries = Menu.entries(A and A.db, questID, A and A.last and A.last.state)
+  local entries = Menu.entries(questID)
   MenuUtil.CreateContextMenu(owner, function(_, root)
-    root:CreateTitle(questName(questID))
+    method(root, "CreateTitle", questName(questID))
     for _, e in ipairs(entries) do
       if e.action == "cancel" then method(root, "CreateDivider") end
-      root:CreateButton(e.label, function() ACTIONS[e.action](questID) end)
+      method(root, "CreateButton", e.label, function() ACTIONS[e.action](questID) end)
     end
   end)
 end
@@ -126,7 +125,8 @@ function Menu.handleClick(owner, questID, button)
     Menu.open(owner, questID)
     return true
   end
-  if (button == nil or button == "LeftButton") and IsModifiedClick and IsModifiedClick("CHATLINK") then
+  if (button == nil or button == "LeftButton") and type(IsModifiedClick) == "function"
+    and select(2, pcall(IsModifiedClick, "CHATLINK")) == true then
     Menu.linkQuest(questID)
     return true
   end

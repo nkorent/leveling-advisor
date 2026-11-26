@@ -182,6 +182,33 @@ local function rowYards(db, state, q, status)
   return dist(db, state, q.giver)
 end
 
+-- Class files by class ID; a class mask bit is 2^(classID - 1).
+local CLASS_FILES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "DEATHKNIGHT", "SHAMAN",
+  "MAGE", "WARLOCK", "MONK", "DRUID", "DEMONHUNTER", "EVOKER" }
+
+local function hasBit(mask, bit)
+  return math.floor(mask / bit) % 2 == 1
+end
+
+-- I3: the class a class quest is for. The player's own class when the quest
+-- allows it (or names no class); otherwise the quest's one class; nil when it
+-- allows several other classes (the "Other class" status says enough).
+local function classTag(q, state)
+  if not q.classQuest then return nil end
+  local mask, mine = q.classMask, state.classMask
+  if type(mask) ~= "number" or (type(mine) == "number" and mine > 0 and hasBit(mask, mine)) then
+    return state.classFile
+  end
+  local found
+  for i, file in ipairs(CLASS_FILES) do
+    if hasBit(mask, 2 ^ (i - 1)) then
+      if found then return nil end
+      found = file
+    end
+  end
+  return found
+end
+
 -- A Contract C row for any quest in the DB (nil otherwise).
 function QuestInfo.row(db, questID, state)
   local q = method(db, "quest", questID)
@@ -201,12 +228,29 @@ function QuestInfo.row(db, questID, state)
     short = short,
     tags = {
       chain = q.chain and { index = q.chain.index, length = q.chain.length } or nil,
-      class = q.classQuest and state.classFile or nil,
+      class = classTag(q, state),
       elite = q.elite and true or false,
       group = (q.groupSize and q.groupSize >= 2) and q.groupSize or nil,
       unverified = q.unverified and true or false,
     },
   }
+end
+
+-- List order of a row's status: what can be acted on now, then soon, done,
+-- then quests the player cannot take.
+local STATUS_GROUP = { available = 0, progress = 0, complete = 0, soon = 1, done = 2, unavailable = 3 }
+
+function QuestInfo.statusGroup(row)
+  if type(row) ~= "table" then return 3 end
+  if row.soon then return STATUS_GROUP.soon end
+  return STATUS_GROUP[row.state] or 3
+end
+
+-- The row's status text ("Horde only", "Completed", "Unlocks at 22", ...) when
+-- it cannot be acted on now; nil for available, in-progress and complete rows.
+function QuestInfo.statusText(row)
+  if QuestInfo.statusGroup(row) == 0 then return nil end
+  return row.short
 end
 
 -- chainID -> { [index] = questID }, built once per db.
@@ -361,4 +405,89 @@ function QuestInfo.detail(db, questID, state, source)
     d.chainXpText = "~" .. Style.number(chainXP) .. " XP for the rest of the chain"
   end
   return d
+end
+
+---------------------------------------------------------------------------
+-- Mini map model (spec 5.6): the quest's giver, turn-in and objectives on the
+-- map that holds most of them.
+---------------------------------------------------------------------------
+local MERGE_DISTANCE = 0.5 -- map units (0-100)
+
+local function hasXY(p)
+  return type(p) == "table" and p.mapID ~= nil and type(p.x) == "number" and type(p.y) == "number"
+end
+
+local function labelFor(db, prefix, place)
+  local who = QuestInfo.npcName(db, place)
+  return who and (prefix .. ": " .. who) or prefix
+end
+
+-- Pure. Returns { mapID, mapName, player, points, others, complete } or nil
+-- when no point of the quest has coordinates.
+function QuestInfo.miniMap(db, q, state)
+  if type(q) ~= "table" then return nil end
+  local cand = {}
+  if hasXY(q.giver) then cand[#cand + 1] = { kind = "giver", place = q.giver } end
+  if hasXY(q.turnIn) then cand[#cand + 1] = { kind = "turnin", place = q.turnIn } end
+  for _, p in ipairs(q.points or {}) do
+    if hasXY(p) then cand[#cand + 1] = { kind = "objective", place = p } end
+  end
+  if #cand == 0 then return nil end
+
+  local counts, order = {}, {}
+  for _, c in ipairs(cand) do
+    local id = c.place.mapID
+    if not counts[id] then counts[id] = 0; order[#order + 1] = id end
+    counts[id] = counts[id] + 1
+  end
+  -- most candidates wins; a tie goes to the giver's map, then the turn-in's
+  -- (the candidates are in that order)
+  local mapID, best = nil, 0
+  for _, id in ipairs(order) do
+    if counts[id] > best then mapID, best = id, counts[id] end
+  end
+
+  local giver, turnin
+  local points = {}
+  for _, c in ipairs(cand) do
+    if c.place.mapID == mapID then
+      if c.kind == "giver" then giver = c.place
+      elseif c.kind == "turnin" then turnin = c.place end
+    end
+  end
+  if giver and turnin and math.abs(giver.x - turnin.x) <= MERGE_DISTANCE
+    and math.abs(giver.y - turnin.y) <= MERGE_DISTANCE then
+    points[#points + 1] = { kind = "giver", x = giver.x, y = giver.y,
+      label = labelFor(db, "Quest giver and turn-in", turnin) }
+  else
+    if giver then points[#points + 1] = { kind = "giver", x = giver.x, y = giver.y,
+      label = labelFor(db, "Quest giver", giver) } end
+    if turnin then points[#points + 1] = { kind = "turnin", x = turnin.x, y = turnin.y,
+      label = labelFor(db, "Turn in", turnin) } end
+  end
+  local others, otherIdx = {}, {}
+  for _, c in ipairs(cand) do
+    local p = c.place
+    if p.mapID == mapID then
+      if c.kind == "objective" then
+        points[#points + 1] = { kind = "objective", x = p.x, y = p.y, label = "Objective" }
+      end
+    else
+      local o = otherIdx[p.mapID]
+      if not o then
+        o = { mapID = p.mapID, name = QuestInfo.zoneName(db, p.mapID) or ("map " .. tostring(p.mapID)), count = 0 }
+        otherIdx[p.mapID] = o
+        others[#others + 1] = o
+      end
+      o.count = o.count + 1
+    end
+  end
+
+  local mm = { mapID = mapID, mapName = QuestInfo.zoneName(db, mapID) or "Map", points = points, others = others }
+  local _, complete = QuestInfo.place(db, q, state)
+  mm.complete = complete and true or false
+  if type(state) == "table" and state.mapID == mapID and type(state.x) == "number" and type(state.y) == "number" then
+    mm.player = { x = state.x, y = state.y }
+  end
+  return mm
 end

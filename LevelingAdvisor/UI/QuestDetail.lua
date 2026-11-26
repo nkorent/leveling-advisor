@@ -241,6 +241,14 @@ local function renderItems(d, m)
   setSection(d, "items", y > 0 and (y - 4) or 0)
 end
 
+local function renderMap(d, m)
+  local mm = d.parts.map
+  local q = d.db:quest(m.questID)
+  local model = q and QuestInfo.miniMap(d.db, q, d.state)
+  setSection(d, "map", model and mm:show(model, m) or 0)
+  if not model then mm:hide() end
+end
+
 function QuestDetail.new(parent)
   local d = { sections = {}, byName = {}, parts = {} }
   d.scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
@@ -255,6 +263,7 @@ function QuestDetail.new(parent)
     why = function(f) return buildBlock(f, "Why Now") end,
     objective = function(f) return buildBlock(f, "Objective") end,
     items = buildItems,
+    map = function(f) return UI.MiniMap.new(f) end,
     actions = buildActions,
   }
   for _, name in ipairs(ORDER) do
@@ -300,16 +309,19 @@ function QuestDetail.new(parent)
       self:clear("This quest is not in the advisor's database.")
       return
     end
+    -- I5: an advisor refresh of the same quest keeps the reader's place
+    local sameQuest = self.questID == questID
     self.questID, self.db, self.state, self.model = questID, ctx.db, ctx.state, m
     self.message:Hide()
     renderHead(self, m)
     renderGiver(self, m)
+    renderMap(self, m)
     renderBlock(self, "why", m.why)
     renderBlock(self, "objective", m.objective)
     renderItems(self, m)
     setSection(self, "actions", BUTTON_H)
     layout(self)
-    method(self.scroll, "SetVerticalScroll", 0)
+    if not sameQuest then method(self.scroll, "SetVerticalScroll", 0) end
   end
 
   return d

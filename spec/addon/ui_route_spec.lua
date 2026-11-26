@@ -68,6 +68,72 @@ describe("zone route page", function()
       assert.equal(2, calls.n)
     end)
 
+    local function planned(plan, id)
+      for _, step in ipairs(plan.steps) do
+        for _, a in ipairs(step.actions) do if a[1] == id then return true end end
+      end
+      return false
+    end
+    -- The Lost Mine (1000) is ruled out once Bathran's Hair (1010) is taken.
+    local function exclusiveMine(data) data.quests[1000][20] = { 1010 } end
+    local function took1010()
+      return ui.with("S18", { log = { [966] = { complete = false }, [4730] = { complete = true },
+        [1010] = { complete = false } } })
+    end
+
+    -- I2 (final review): the frozen plan is checked again on each result.
+    it("replans once when a planned quest is ruled out, and drops it", function()
+      load({ patch = exclusiveMine })
+      local calls = ui.spy(ns.Engine, "route")
+      assert.is_true(planned(ns.Advisor.plan(1439), 1000))
+      fake.setState(took1010())
+      local p = ns.Advisor.plan(1439)
+      assert.equal(2, calls.n)
+      assert.is_false(planned(p, 1000))
+      ns.Advisor.plan(1439)   -- same result: not rebuilt again
+      assert.equal(2, calls.n)
+    end)
+
+    it("a waiting chain step is not ruled out", function()
+      load()
+      local calls = ui.spy(ns.Engine, "route")
+      local p = ns.Advisor.plan(1439)
+      assert.is_true(planned(p, 967))   -- needs 966 (in the log) first
+      fake.setState(ui.with("S18"))
+      assert.equal(p, ns.Advisor.plan(1439))
+      assert.equal(1, calls.n)
+      assert.is_false(ns.Advisor.questDropped(db, 967, ns.Advisor.last.state))
+    end)
+
+    it("in combat the stale plan marks the ruled-out quest and does not wait for it", function()
+      load({ patch = exclusiveMine })
+      local p = ns.Advisor.plan(1439)
+      fake.combat(true)
+      fake.setState(took1010())
+      assert.equal(p, ns.Advisor.plan(1439))
+      local r = ns.UI.Model.route(p, ns.Advisor.last.state, db)
+      local line = r.steps[4].quests[1]
+      assert.equal(1000, line.questID)
+      assert.same({ "unavailable", true, true, "no longer available" }, { line.state, line.dropped, line.done, line.what })
+      assert.is_true(r.steps[4].done)
+      assert.equal("Darkshore · 10–20 · 6 quests left", r.header)
+      -- a step chain blocked only by the ruled-out quest lets the route finish
+      local all = { completed = {}, log = { [1010] = { complete = false } } }
+      for _, step in ipairs(p.steps) do
+        for _, a in ipairs(step.actions) do if a[1] ~= 1000 then all.completed[a[1]] = true end end
+      end
+      assert.equal("Your route is done.", ns.UI.Model.route(p, ui.with("S18", all), db).progress)
+    end)
+
+    it("the plan key holds the ignored set, not just its size", function()
+      load({ state = ui.with("S18", { ignored = { [7008] = true } }) })
+      local calls = ui.spy(ns.Engine, "route")
+      ns.Advisor.plan(1439)
+      fake.setState(ui.with("S18", { ignored = { [7007] = true } }))
+      ns.Advisor.plan(1439)
+      assert.equal(2, calls.n)
+    end)
+
     it("an empty plan is kept", function()
       load()
       local calls = ui.spy(ns.Engine, "route", function() return {} end)
@@ -94,6 +160,38 @@ describe("zone route page", function()
       assert.equal("progress", r.steps[5].quests[1].state)
       assert.equal("complete", r.steps[7].quests[1].state)
       assert.equal("available", r.steps[1].quests[1].state)
+    end)
+
+    -- C1 (final review): The Tower of Althalaxx part 3 (967) needs part 2
+    -- (966, in the log): no "!" at Gelkak until 966 is turned in.
+    local function after966()
+      local s = ui.with("S18")
+      s.completed[966] = true; s.log[966] = nil
+      return s
+    end
+
+    it("a latent chain step gets no map pin until its prerequisite is done", function()
+      load()
+      local plan = ns.Advisor.plan(1439)
+      local function pinKind(state, id)
+        for _, pin in ipairs(ns.MapPins.build(ns.Advisor.last.rec, db, 1439, plan.steps, state)) do
+          for _, q in ipairs(pin.quests) do if q.id == id then return pin.kind end end
+        end
+      end
+      local st = ns.Advisor.last.state
+      assert.is_nil(pinKind(st, 967))
+      assert.is_nil(pinKind(st, 966))   -- in progress: no "!" at its giver, no "?" yet
+      assert.equal("pickup", pinKind(after966(), 967))
+    end)
+
+    it("a latent chain step shows the grey marker on the route page", function()
+      load()
+      local plan = ns.Advisor.plan(1439)
+      local r = ns.UI.Model.route(plan, ns.Advisor.last.state, db)
+      assert.equal(967, r.steps[5].quests[2].questID)
+      assert.equal("unavailable", r.steps[5].quests[2].state)
+      assert.is_false(r.steps[5].quests[2].done)
+      assert.equal("available", ns.UI.Model.route(plan, after966(), db).steps[5].quests[2].state)
     end)
 
     it("selected flag and nil plan", function()
@@ -141,7 +239,8 @@ describe("zone route page", function()
         for _, a in ipairs(step.actions) do
           local g = db:quest(a[1]).giver
           if a[2] == "pickup" and g and g.mapID == 1439 then
-            assert.equal(not ns.Advisor.actionDone(a[1], "pickup", st), pickupPinned(st, a[1]), "quest " .. a[1])
+            local open = not ns.Advisor.actionDone(a[1], "pickup", st) and ns.Advisor.canPickUp(db, a[1], st)
+            assert.equal(open, pickupPinned(st, a[1]), "quest " .. a[1])
           end
         end
       end
@@ -187,6 +286,21 @@ describe("zone route page", function()
       load()
       ns.UI.show({ kind = "zone", mapID = 1439, questID = 4763, source = { section = "here", yards = 50.9 } })
       assert.truthy(fake.text("Its quest giver is 51 yd from you."))
+    end)
+
+    -- I5 (final review): the route list keeps its scroll only for the same zone.
+    it("the route list keeps its scroll on a refresh and starts at the top for another zone", function()
+      load()
+      ns.UI.show({ kind = "zone", mapID = 1439 })
+      local box = stepRows()[1].frame:GetParent()
+      ns.UI.refresh()
+      assert.is_true(box.retained)
+      ns.UI.select(4730)
+      assert.is_true(box.retained)
+      ns.UI.show({ kind = "zone", mapID = 1440 })
+      assert.is_falsy(box.retained)
+      ns.UI.back()
+      assert.is_falsy(box.retained)
     end)
 
     it("Recalculate route replans", function()

@@ -22,6 +22,8 @@
 --   worldMap true adds WorldMapFrame (Show, SetMapID, AddDataProvider, HookScript)
 --   art      "tiles": C_Map.GetMapArtLayers / GetMapArtLayerTextures give a 1002 x 668
 --            layer of 256 px tiles (12 file IDs) for every map; nil: no art API
+--   minimap  true adds a 140 x 140 Minimap centred at (500, 500) with effective scale 1,
+--            and GetCursorPosition (set fake.cursor = { x, y })
 --   compartment true adds AddonCompartmentFrame (RegisterAddon is recorded in
 --            fake.compartment)
 --
@@ -37,7 +39,8 @@
 --   setState(state)
 --   waypoints, superTracked, superTrackedQuest, openedMaps   map API results
 --                 (UiMapPoint, C_Map.SetUserWaypoint, C_SuperTrack, OpenWorldMap)
---   scrollBoxes   every WowScrollBoxList created (box.rows = {{frame, element, extent}})
+--   scrollBoxes   every WowScrollBoxList created (box.rows = {{frame, element, extent}};
+--                 box.retained = the last SetDataProvider's retain-scroll argument)
 --   row(questID)  the Contract C row of that quest in the current rec
 --   rowFrame(questID)  the list row frame now showing that quest
 --   out           the printed lines (also the 4th value of ui.load)
@@ -328,8 +331,9 @@ local function newClient(opts)
 
   -- Scroll box list (WowScrollBoxList): SetDataProvider lays out one row
   -- frame per element, reusing the previous call's frames by position.
-  local function boxSetDataProvider(box, dp)
+  local function boxSetDataProvider(box, dp, retain)
     box.dataProvider = dp
+    box.retained = retain -- ScrollBoxConstants.RetainScrollPosition (true) or not
     local view = box.view or {}
     local old = box.rows or {}
     local rows = {}
@@ -374,6 +378,8 @@ local function newClient(opts)
         w.Text = w:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
       elseif t == "SearchBoxTemplate" then
         w.Instructions = w:CreateFontString(nil, "ARTWORK", "GameFontDisable")
+        -- the template's own handler (hides the placeholder, shows the clear button)
+        w.scripts.OnTextChanged = function(self) self.templateRan = (self.templateRan or 0) + 1 end
       elseif t == "UIPanelScrollFrameTemplate" then
         w.ScrollBar = newWidget("Slider", nil, w)
       elseif t == "WowScrollBoxList" then
@@ -505,6 +511,15 @@ local function newClient(opts)
     SetSuperTrackedQuestID = function(id) fake.superTrackedQuest = id end,
   }
   g.OpenWorldMap = function(mapID) fake.openedMaps[#fake.openedMaps + 1] = mapID end
+  if opts.minimap then
+    local mm = newWidget("Frame", "Minimap", g.UIParent)
+    mm:SetSize(140, 140)
+    function mm:GetCenter() return 500, 500 end
+    function mm:GetEffectiveScale() return 1 end
+    g.Minimap = mm
+    fake.cursor = { 500, 500 }
+    g.GetCursorPosition = function() return fake.cursor[1], fake.cursor[2] end
+  end
   if opts.worldMap then
     local wm = newWidget("Frame", "WorldMapFrame", g.UIParent)
     wm.shown = false

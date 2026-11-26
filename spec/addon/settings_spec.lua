@@ -48,10 +48,10 @@ end
 describe("Settings", function()
   it("returns defaults when unset", function()
     local ns = setup()
-    for _, k in ipairs({ "elite", "dungeons", "pinsAll", "recorder" }) do
+    for _, k in ipairs({ "elite", "dungeons", "pinsAll", "recorder", "minimap" }) do
       assert.is_true(ns.Settings.get(k))
     end
-    assert.same({ elite = true, dungeons = true, pinsAll = true, recorder = true }, ns.Settings.DEFAULTS)
+    assert.same({ elite = true, dungeons = true, pinsAll = true, recorder = true, minimap = true }, ns.Settings.DEFAULTS)
   end)
 
   it("set then get, including false", function()
@@ -79,13 +79,28 @@ describe("Settings", function()
     assert.same({ elite = true, dungeons = false }, a)
   end)
 
+  -- spec 5.9: every data source is credited in the About line (final review).
+  local SOURCES = "data: QuestieDB Forever (GPL-3.0), outof.games, OpenMap (MIT), an in-game census of map sizes"
+    .. " and your own recorder."
+
   it("aboutLine with and without data meta", function()
     local ns = setup()
-    assert.equals("Leveling Advisor 0.1.0 — GPL-3.0 — data: outof.games, Questie (GPL-3.0) and your own recorder. Game data not built.",
+    assert.equals("Leveling Advisor 0.1.0 — GPL-3.0 — " .. SOURCES .. " Game data not built.",
       ns.Settings.aboutLine())
     ns.Data = { meta = { gameData = "1.60.1" } }
-    assert.equals("Leveling Advisor 0.1.0 — GPL-3.0 — data: outof.games, Questie (GPL-3.0) and your own recorder. Game data 1.60.1.",
+    assert.equals("Leveling Advisor 0.1.0 — GPL-3.0 — " .. SOURCES .. " Game data 1.60.1.",
       ns.Settings.aboutLine())
+  end)
+
+  it("the README names the same data sources and promises no step distance", function()
+    local f = assert(io.open("README.md", "r"))
+    local readme = f:read("*a")
+    f:close()
+    local status = readme:match("\nStatus: ([^\n]*)")
+    for _, name in ipairs({ "QuestieDB Forever", "outof.games", "OpenMap", "in-game census" }) do
+      assert.truthy(status:find(name, 1, true), name)
+    end
+    assert.falsy(readme:find("distance to the next", 1, true))
   end)
 
   describe("registerPanel", function()
@@ -94,9 +109,10 @@ describe("Settings", function()
       "Recommend dungeons and their quests",
       "Show pins for all recommended quest givers",
       "Record quest data (local only)",
+      "Show minimap button",
     }
 
-    it("uses Settings when present and builds four labelled checkboxes", function()
+    it("uses Settings when present and builds five labelled checkboxes", function()
       local registered = {}
       local cat = { GetID = function() return 42 end }
       local ns, _, _, created = setup({
@@ -111,7 +127,7 @@ describe("Settings", function()
       assert.equals(cat, registered.cat)
       assert.equals("Leveling Advisor", registered.name)
       local boxes = checkboxes(created)
-      assert.equals(4, #boxes)
+      assert.equals(5, #boxes)
       for i, b in ipairs(boxes) do assert.equals(LABELS[i], b.Text.text) end
       -- OnShow reflects settings
       registered.frame.scripts.OnShow(registered.frame)

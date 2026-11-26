@@ -94,7 +94,8 @@ local function layoutIcons(p, q)
     local id = ids[i]
     if id then
       b:ClearAllPoints()
-      b:SetPoint("RIGHT", p.root, "RIGHT", -(PIN + 8 + (#ids - i) * MINI_STEP), 0)
+      -- offsets of a scaled button are in its own units (I6)
+      b:SetPoint("RIGHT", p.root, "RIGHT", -(PIN + 8 + (#ids - i) * MINI_STEP) / (b.laScale or 1), 0)
       UI.Items.setItem(b, { itemID = id })
       b:Show()
     else

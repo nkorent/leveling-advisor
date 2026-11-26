@@ -176,8 +176,16 @@ local function itemLink(id)
   return link
 end
 
+-- The ItemButton intrinsic draws its slot frame and quality border for a
+-- 37 px button; they do not follow SetSize.
+Items.SLOT = 37
+
+-- size: the on-screen size. A mini button (I6) is a full 37 px button scaled
+-- down (Blizzard's own way for small item buttons), so its slot frame and
+-- quality border shrink with it; b.laScale is that scale (anchor offsets of
+-- the button are in its own, scaled, units).
 function Items.newButton(parent, size, mini)
-  size = size or (mini and 22 or 37)
+  size = size or (mini and 22 or Items.SLOT)
   local ok, b = pcall(CreateFrame, "ItemButton", nil, parent)
   if not ok or type(b) ~= "table" then
     b = CreateFrame("Button", nil, parent)
@@ -185,7 +193,13 @@ function Items.newButton(parent, size, mini)
     b.icon = b:CreateTexture(nil, "ARTWORK")
     b.icon:SetAllPoints(b)
   end
-  b:SetSize(size, size)
+  if mini then
+    b:SetSize(Items.SLOT, Items.SLOT)
+    b.laScale = size / Items.SLOT
+    method(b, "SetScale", b.laScale)
+  else
+    b:SetSize(size, size)
+  end
   b.laMini = mini and true or false
   if type(b.Count) ~= "table" then
     b.Count = b:CreateFontString(nil, "OVERLAY", "NumberFontNormal")

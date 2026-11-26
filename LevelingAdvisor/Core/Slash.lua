@@ -90,10 +90,10 @@ local function debugInfo()
     n, tostring(ms), A.computes or 0, A.scheduler and A.scheduler.runs or 0,
     tostring(s and s.level), tostring(s and s.mapID), logSize,
     tostring(s and s.greyAtOrBelow)))
-  local last = ns.UI and ns.UI.Menu and ns.UI.Menu.lastLink
-  if last then
+  local link = ns.UI and ns.UI.Menu and ns.UI.Menu.lastLink
+  if link then
     local bits = {}
-    for i, a in ipairs(last) do bits[i] = a[1] .. "=" .. tostring(a[2]) end
+    for i, a in ipairs(link) do bits[i] = a[1] .. "=" .. tostring(a[2]) end
     say("last link: " .. table.concat(bits, ", "))
   end
 end
@@ -104,6 +104,28 @@ local function pins()
   else
     say("Map pins are not available.")
   end
+end
+
+local function tabCmd(arg)
+  local QLT = ns.UI and ns.UI.QuestLogTab
+  if not QLT then say("The bookmark tab is not available."); return end
+  if arg == "" then say(QLT.describe()); return end
+  if arg:lower() == "reset" then
+    QLT.setOffset(nil); say("Bookmark tab offset cleared."); return
+  end
+  local dx, dy = arg:match("^(%-?[%d%.]+)%s+(%-?[%d%.]+)$")
+  dx, dy = tonumber(dx), tonumber(dy)
+  if not dx then say("Usage: /advisor tab <dx> <dy> | reset"); return end
+  local ox, oy = QLT.getOffset()
+  local _, clamped = QLT.setOffset(ox + dx, oy + dy)
+  if clamped then say("Tab offset limited to \194\177200.") end
+  say(QLT.describe())
+end
+
+local function minimapCmd()
+  local on = not ns.Settings.get("minimap")
+  ns.Settings.set("minimap", on)
+  say(on and "Minimap button shown." or "Minimap button hidden.")
 end
 
 local function help()
@@ -117,6 +139,8 @@ local function help()
   print("  /advisor about — version and data sources")
   print("  /advisor map <questID> — show a quest on the map")
   print("  /advisor pins — count the map pins on the current map")
+  print("  /advisor tab [dx dy|reset] — nudge the quest-log bookmark tab")
+  print("  /advisor minimap — show or hide the minimap button")
   print("  /advisor debug — diagnostics")
   print("  /advisor help — list the commands")
 end
@@ -135,6 +159,8 @@ function Slash.handle(msg)
   elseif name == "about" then say(ns.Settings.aboutLine())
   elseif name == "map" then showOnMap(arg)
   elseif name == "pins" then pins()
+  elseif name == "tab" then tabCmd(arg)
+  elseif name == "minimap" then minimapCmd()
   elseif name == "debug" then debugInfo()
   elseif name == "help" then help()
   else

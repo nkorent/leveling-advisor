@@ -1,10 +1,20 @@
+![Leveling Advisor](docs/logo.png)
+
 # Leveling Advisor
 
 A leveling guide addon for WoW: Forever. It reads your character's level, zone, class and quest log, and recommends which quests to do next, which dungeons are worth running, and where to go, so you do not have to look anything up. Built for players with many alts.
 
-Status: in development. The addon core (data loading, recommendation engine, chat summary, settings, recorder and export) and the data pipeline are built. The quest data is provisional until it is checked against the in-game census, and the in-game window is not finished yet, so `/advisor` prints its recommendations in chat.
+Status: working addon with a full in-game book. It has a bookmark tab on the Map & Quest Log, zone routes, quest details with items and a mini map, a right-click menu, search, and map pins. The data is built from QuestieDB Forever, outof.games, OpenMap and an in-game census of map sizes (full build, not provisional).
 
-Map pins: small gold-rimmed shields with ! (pick up) or ? (turn in) mark recommended quests; hover for details, click for a waypoint.
+## Features
+
+- **The book.** A two-page window with the recommended zones and your dungeon on the left and the quests on the right. Open it with `/advisor`, the key binding, or the Leveling Advisor bookmark on the Map & Quest Log.
+- **Zone routes.** Pick a zone to see a step-by-step route. Each step lists the quests to pick up, do and turn in there, and the XP it is worth.
+- **Dungeon pages.** A "Before You Go" list of the quests to pick up on your way, the dungeon entrance and its level range.
+- **Quest details.** Why the quest is recommended, its chain and XP, the items it provides, requires and rewards (with item tooltips), and a mini map of the zone. The mini map marks the giver, the objectives and you. Hover a marker for its name; click it to set a waypoint.
+- **Search.** Type part of a quest name to find it, with its zone and whether it is available to you.
+- **Right-click menu.** Right-click any quest to show it on the map, link it to chat, or ignore it.
+- **Map pins.** Small gold-rimmed shields with ! (pick up) or ? (turn in) mark recommended quests on the world map; hover for details, click for a waypoint.
 
 ## Install
 
@@ -17,7 +27,9 @@ Release zips (`dist/LevelingAdvisor-<version>.zip`) already contain the `Levelin
 
 | Command | What it does |
 | --- | --- |
-| `/advisor` (or `/advisor summary`) | Show recommendations |
+| `/advisor` | Open (or close) the book |
+| `/advisor summary` | Print the recommendations in chat |
+| `/advisor map <questID>` | Show a quest on the world map |
 | `/advisor ignore <questID>` | Hide a quest on this character |
 | `/advisor unignore <questID\|all>` | Show it again (or clear every ignored quest) |
 | `/advisor settings` | Open the settings panel |
@@ -26,6 +38,8 @@ Release zips (`dist/LevelingAdvisor-<version>.zip`) already contain the `Levelin
 | `/advisor pins` | Count the map pins on the current map |
 | `/advisor debug` | Diagnostics |
 | `/advisor help` | List the commands |
+
+The book also has a key binding (Options > Key Bindings > AddOns > Leveling Advisor) and a bookmark on the Map & Quest Log.
 
 ## Settings
 
@@ -57,6 +71,7 @@ The recorder store is **account-wide**: data from all of your characters is comb
 - **Questie** and **QuestieDB** (https://github.com/Questie/Questie, https://github.com/Questie/QuestieDB, GPL-3.0). The data pipeline imports QuestieDB's WoW: Forever quest, NPC and object data (including its Forever trace data from players' sessions) and Questie's quest blacklist. Because of this, Leveling Advisor is released under the same license. Leveling Advisor is not affiliated with Questie and does not use its name or logo as branding.
 - **outof.games**: WoW: Forever quest, NPC and map data. The data pipeline crawls it politely: `robots.txt` is respected, there is at most one request every 2 seconds, and responses are cached.
 - **OpenMap** (https://github.com/openmap-world/openmap, MIT): dungeon names and entrances, Group Finder level ranges, boat and zeppelin routes, and zone level ranges, used in the built data. See `NOTICE.md`.
+- **In-game census**: zone map sizes and rects measured in the game client.
 - **Your own recorder**: data recorded in-game by players.
 
 The license notices and credits for this data are in `NOTICE.md`; where each dataset came from is recorded in the source repository (`data/REFERENCE_SOURCES.md`, `data/QUESTIE_SOURCE.md`).
@@ -71,5 +86,4 @@ GPL-3.0. See `LICENSE`.
 - Syntax check: `tools/check-lua-syntax.sh LevelingAdvisor`.
 - Install into the game folder: `tools/deploy.sh LevelingAdvisor`.
 - Release build: `tools/build.sh` runs the syntax check and tests, requires the generated `Data/` files, and writes `dist/LevelingAdvisor-<version>.zip`. A build whose `Data/Meta.lua` says `provisional = true` is named `-provisional` and prints a warning. Use `--allow-missing-data` to build without data; that zip is named `-nodata` and is for testing only.
-- `pipeline/` is the data pipeline: it imports the QuestieDB Forever database, crawls outof.games (cached in `data/`), places OpenMap's dungeon entrances and boat and zeppelin docks on the census zone maps, and writes `LevelingAdvisor/Data/*.lua`. Its tests run with `pytest pipeline/tests`. The data it builds is provisional until the in-game census.
-- `dev/LevelingAdvisorDiag` is a development-only diagnostic addon and is never shipped.
+- `pipeline/` is the data pipeline: it imports the QuestieDB Forever database, crawls outof.games (cached in `data/`), places OpenMap's dungeon entrances and boat and zeppelin docks on the census zone maps, and writes `LevelingAdvisor/Data/*.lua`. Its tests run with `pytest pipeline/tests`.

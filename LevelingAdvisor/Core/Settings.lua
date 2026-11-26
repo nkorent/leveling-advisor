@@ -5,13 +5,14 @@ ns.Settings = Settings_
 
 local PANEL_NAME = "Leveling Advisor"
 
-Settings_.DEFAULTS = { elite = true, dungeons = true, pinsAll = true, recorder = true }
+Settings_.DEFAULTS = { elite = true, dungeons = true, pinsAll = true, recorder = true, minimap = true }
 
 local OPTIONS = {
   { key = "elite", label = "Include elite and group quests" },
   { key = "dungeons", label = "Recommend dungeons and their quests" },
   { key = "pinsAll", label = "Show pins for all recommended quest givers" },
   { key = "recorder", label = "Record quest data (local only)" },
+  { key = "minimap", label = "Show minimap button" },
 }
 
 local listeners = {}
@@ -44,7 +45,8 @@ function Settings_.aboutLine()
   local meta = ns.Data and ns.Data.meta
   local game = (meta and meta.gameData) or "not built"
   return "Leveling Advisor " .. tostring(ns.VERSION)
-    .. " — GPL-3.0 — data: outof.games, Questie (GPL-3.0) and your own recorder. Game data "
+    .. " — GPL-3.0 — data: QuestieDB Forever (GPL-3.0), outof.games, OpenMap (MIT), an in-game census"
+    .. " of map sizes and your own recorder. Game data "
     .. game .. "."
 end
 

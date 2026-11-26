@@ -77,6 +77,7 @@ end
 -- The zone route (page left of the zone view).
 ---------------------------------------------------------------------------
 local WHAT = { pickup = "pick up", objective = "objectives", turnin = "turn in" }
+local DROPPED = "no longer available"
 local KIND_ORDER = { "pickup", "objective", "turnin" }
 local SUB_PARTS = { { "pickup", "Pick up" }, { "objective", "Objectives" }, { "turnin", "Turn in" } }
 
@@ -85,11 +86,25 @@ local function actionDone(id, kind, state)
   return A and A.actionDone and A.actionDone(id, kind, state) or false
 end
 
-local function liveState(id, state)
+-- C1: the yellow "!" only for a quest the player can pick up now; a later
+-- chain step, a "soon" quest or anything else not eligible gets the grey one.
+local function canPickUp(db, id, state)
+  local A = ns.Advisor
+  return type(A) == "table" and type(A.canPickUp) == "function" and A.canPickUp(db, id, state) == true
+end
+
+-- I2: a planned quest ruled out since the plan was made.
+local function questDropped(db, id, state)
+  local A = ns.Advisor
+  return type(A) == "table" and type(A.questDropped) == "function" and A.questDropped(db, id, state) == true
+end
+
+local function liveState(id, state, db)
   local log = type(state.log) == "table" and state.log[id] or nil
   if type(state.completed) == "table" and state.completed[id] then return "done" end
   if type(log) == "table" and log.complete then return "complete" end
   if log then return "progress" end
+  if not canPickUp(db, id, state) then return "unavailable" end
   return "available"
 end
 
@@ -138,12 +153,15 @@ function Model.route(plan, state, db, selectedID)
       if not line then
         local q = db and db:quest(id)
         line = { questID = id, name = type(q) == "table" and q.name or ("Quest " .. tostring(id)),
-          kinds = {}, state = liveState(id, state), done = true, selected = id == selectedID }
+          kinds = {}, state = liveState(id, state, db), done = true, selected = id == selectedID,
+          dropped = questDropped(db, id, state) }
         byID[id] = line
         quests[#quests + 1] = line
       end
       line.kinds[kind] = true
-      if not actionDone(id, kind, state) then
+      -- a ruled-out quest neither blocks its step nor counts as left: the
+      -- route can still finish (the plan is rebuilt after combat)
+      if not actionDone(id, kind, state) and not line.dropped then
         line.done = false
         stepDone = false
         leftQuests[id] = true
@@ -154,7 +172,7 @@ function Model.route(plan, state, db, selectedID)
       for _, k in ipairs(KIND_ORDER) do
         if line.kinds[k] then w[#w + 1] = WHAT[k] end
       end
-      line.what = table.concat(w, ", ")
+      line.what = line.dropped and DROPPED or table.concat(w, ", ")
       line.kinds = nil
     end
     if not stepDone and not current then current = i end
@@ -204,14 +222,15 @@ function Model.dungeon(d, state, db)
     if not isDone and not current then current = i end
     steps[i] = { index = i, title = zone and (zone .. " — " .. name) or name, sub = sub, done = isDone,
       current = false,
-      quests = { { questID = p.questID, name = name, what = WHAT.pickup, state = liveState(p.questID, state),
+      quests = { { questID = p.questID, name = name, what = WHAT.pickup, state = liveState(p.questID, state, db),
         done = isDone } },
       place = { mapID = p.mapID, x = p.x, y = p.y } }
   end
   local e = d.entrance or {}
-  local coords = Style.coords(e.x, e.y)
-  local zoneName = QI.zoneName(db, e.mapID)
-  local place = { mapID = e.mapID, x = e.x, y = e.y }
+  local known = e.mapID ~= nil and type(e.x) == "number" and type(e.y) == "number"
+  local coords = known and Style.coords(e.x, e.y) or "Entrance unknown"
+  local zoneName = known and QI.zoneName(db, e.mapID) or nil
+  local place = known and { mapID = e.mapID, x = e.x, y = e.y } or nil
   local n = #steps + 1
   steps[n] = { index = n, title = "Dungeon entrance" .. (zoneName and (" — " .. zoneName) or ""),
     sub = coords, done = false, current = current == nil, entrance = true, quests = {}, place = place }

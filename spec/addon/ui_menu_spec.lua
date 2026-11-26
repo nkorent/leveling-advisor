@@ -18,11 +18,11 @@ describe("quest menu, Link to Chat and Ignore", function()
   it("entries", function()
     load()
     local order = { "Show on Map", "Link to Chat", "Ignore This Quest", "Cancel" }
-    assert.same(order, labels(Menu.entries(db, 4763, state)))
+    assert.same(order, labels(Menu.entries(4763)))
     ns.chardb.ignored[4763] = true
     order[3] = "Stop Ignoring This Quest"
-    assert.same(order, labels(Menu.entries(db, 4763, state)))
-    assert.equal("unignore", Menu.entries(db, 4763, state)[3].action)
+    assert.same(order, labels(Menu.entries(4763)))
+    assert.equal("unignore", Menu.entries(4763)[3].action)
   end)
 
   it("right-click on a row opens the native menu with the quest title", function()
@@ -198,5 +198,30 @@ describe("quest menu, Link to Chat and Ignore", function()
     env.SlashCmdList.LEVELINGADVISOR("debug")
     assert.truthy(fake.out[n + 1]:match("log=2, grey=%S+$"))
     assert.truthy(fake.out[n + 2]:find("last link: ChatFrameUtil.InsertLink=false, ChatEdit_InsertLink=false, ChatFrameUtil.OpenChat=ran", 1, true))
+  end)
+  it("Menu.open is fail-soft without CreateButton or CreateTitle", function()
+    load()
+    local root = {}
+    env.MenuUtil.CreateContextMenu = function(_, fn) fn(nil, root) end
+    assert.has_no.errors(function() Menu.open(fake.newFrame("Frame"), 4763) end)
+  end)
+
+  it("handleClick survives a throwing IsModifiedClick", function()
+    load()
+    env.IsModifiedClick = function() error("boom") end
+    assert.is_false(Menu.handleClick(fake.newFrame("Frame"), 4763, "LeftButton"))
+  end)
+
+  it("a plain click on the mini item button reaches the row; right-click opens the menu", function()
+    load()
+    ns.UI.open()
+    local f = fake.rowFrame(4763)
+    local btn
+    local found = fake.findAll(function(w) return w.laMini and w.parent and w.parent.parent == f end)
+    btn = found[1]
+    assert.truthy(btn)
+    btn.laItemID = 15204
+    fake.click(btn, "RightButton")
+    assert.equal("The Blackwood Corrupted", fake.menu.title)
   end)
 end)

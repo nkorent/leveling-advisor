@@ -42,8 +42,13 @@ local function client(opts)
   function pinBase:SetPosition(x, y) self.pos = { x, y } end
   function pinBase:SetSize(w, h) self.w, self.h = w, h end
   function pinBase:CreateTexture() local t = newTexture(); self.textures = self.textures or {}; self.textures[#self.textures + 1] = t; return t end
-  function pinBase:SetPassThroughButtons() end
   function pinBase:EnableMouse() end
+  -- The frame's own (C) methods live in its metatable, under the mixin copies.
+  local frameMethods = {}
+  function frameMethods:SetPassThroughButtons(...)
+    self.passThrough = { ... }
+    c.passCalls = (c.passCalls or 0) + 1
+  end
 
   local function newHolder(opts2)
     local h = {}
@@ -72,7 +77,7 @@ local function client(opts)
     c.pins = keep
   end
   function map:AcquirePin(tpl, ...)
-    local pin = mixin({ template = tpl, Icon = newTexture() }, pinBase)
+    local pin = mixin(setmetatable({ template = tpl, Icon = newTexture() }, { __index = frameMethods }), pinBase)
     mixin(pin, c.env.LevelingAdvisorMapPinMixin or {})
     c.pins[#c.pins + 1] = pin
     if pin.OnLoad then pin:OnLoad() end
@@ -90,6 +95,7 @@ local function client(opts)
 
   local tip = c.tooltip
   function tip:SetOwner(o, anchor) self.owner, self.anchor = o, anchor; self.lines = {} end
+  function tip:GetOwner() return self.owner end
   function tip:AddLine(t, r, g, b) self.lines[#self.lines + 1] = { t, r = r, g = g, b = b } end
   function tip:AddDoubleLine(l, r, lr, lg, lb, rr, rg, rb)
     self.lines[#self.lines + 1] = { l, right = r, r = lr, g = lg, b = lb, rr = rr }
@@ -136,14 +142,15 @@ local function setup(opts)
     },
     last = { rec = { sections = {
       { key = "here", title = "Right Here", rows = {
-        { questID = 1, name = "Quest One", level = 5, color = "green", xp = 120,
+        { questID = 1, name = "Quest One", level = 5, color = "green", xp = 120, state = "available",
           giver = { mapID = 1411, x = 10, y = 20.5, kind = 1, id = 10 } },
-        { questID = 2, name = "Quest Two", level = 6, color = "red", xp = 300,
+        { questID = 2, name = "Quest Two", level = 6, color = "red", xp = 300, state = "available",
           giver = { mapID = 1411, x = 10.2, y = 20.5, kind = 1, id = 10 } },
-        { questID = 3, name = "Quest Three", level = 6, color = "yellow", xp = 50,
+        { questID = 3, name = "Quest Three", level = 6, color = "yellow", xp = 50, state = "available",
           giver = { mapID = 1411, x = 50, y = 50, kind = 1, id = 10 } },
       } },
     } } },
+    canPickUp = function() return true end,
     onUpdate = function(fn) c.updateFns[#c.updateFns + 1] = fn end,
     setMapShown = function(v) c.shownFlags[#c.shownFlags + 1] = v end,
   }
@@ -293,7 +300,9 @@ describe("MapPins rendering", function()
 
     it("turn-in glyph is the QuestTurnin atlas", function()
       local c = setup()
-      c.ns.Advisor.last.rec.sections[1].key = "turnin"
+      local s = c.ns.Advisor.last.rec.sections[1]
+      s.key = "turnin"
+      for _, r in ipairs(s.rows) do r.state = "complete" end
       c.ns.Advisor.db.quest = function() return { turnIn = { kind = 1, id = 10, mapID = 1411, x = 70, y = 70 } } end
       install(c):RefreshAllData()
       assert.equals("QuestTurnin", bySize(c.pins[1], 9).atlas)
@@ -627,6 +636,56 @@ describe("MapPins rendering", function()
       c.ns.Advisor.actionDone = function(id, kind) return id == 31 and kind == "pickup" end
       install(c):RefreshAllData()
       assert.equals(2, #c.pins)
+    end)
+  end)
+
+  -- I4 (final review): SetPassThroughButtons is restricted in combat (a
+  -- blocked action, not a Lua error), from our OnLoad and from MapCanvas.
+  describe("pass-through buttons", function()
+    it("lets right clicks through the pin out of combat", function()
+      local c = setup()
+      install(c):RefreshAllData()
+      assert.same({ "RightButton" }, c.pins[1].passThrough)
+    end)
+
+    it("is never called in combat, and is applied after the fight", function()
+      local c = setup()
+      c.env.InCombatLockdown = function() return true end
+      install(c):RefreshAllData()
+      local pin = c.pins[1]
+      assert.is_nil(pin.passThrough)
+      pin:SetPassThroughButtons("RightButton")   -- the map canvas's own call
+      assert.is_nil(c.passCalls)
+      c.env.InCombatLockdown = function() return false end
+      c.ns.Events.dispatch("PLAYER_REGEN_ENABLED")
+      assert.same({ "RightButton" }, pin.passThrough)
+      assert.equals(#c.pins, c.passCalls)
+      c.ns.Events.dispatch("PLAYER_REGEN_ENABLED")   -- applied once
+      assert.equals(#c.pins, c.passCalls)
+    end)
+  end)
+
+  -- Deferred P1 minor (final review): a released pin takes its tooltip along.
+  describe("tooltip on refresh", function()
+    it("hides the hovered pin's tooltip when the pins are released", function()
+      local c = setup()
+      local p = install(c)
+      p:RefreshAllData()
+      c.pins[1]:OnMouseEnter()
+      assert.is_true(c.tooltip.shown)
+      p:RefreshAllData()
+      assert.is_false(c.tooltip.shown)
+    end)
+
+    it("leaves a tooltip it does not own alone", function()
+      local c = setup()
+      local p = install(c)
+      p:RefreshAllData()
+      c.pins[1]:OnMouseEnter()
+      c.tooltip:SetOwner({}, "ANCHOR_RIGHT")
+      c.tooltip:Show()
+      p:RefreshAllData()
+      assert.is_true(c.tooltip.shown)
     end)
   end)
 

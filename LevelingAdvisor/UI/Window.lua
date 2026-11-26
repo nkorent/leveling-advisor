@@ -473,8 +473,9 @@ function UI.refresh()
   render()
 end
 
--- Pushes the current view and shows v; opens a closed book first.
-function UI.show(v)
+-- Pushes the current view and shows v; opens a closed book first. With
+-- `replace` the current view is swapped without a back-stack entry (search).
+function UI.show(v, replace)
   local wasClosed = not UI.isShown()
   if wasClosed then
     skipRender = true
@@ -483,7 +484,7 @@ function UI.show(v)
     if not ok then report(err) end
   end
   -- A restored last view is not a page the player came from: Back goes to main.
-  if not wasClosed then stack[#stack + 1] = view end
+  if not wasClosed and not replace then stack[#stack + 1] = view end
   view = v
   saveLastView()
   render()
@@ -491,6 +492,7 @@ end
 
 function UI.back()
   view = table.remove(stack) or { kind = "main" }
+  if view.kind ~= "search" and UI.Search then call(UI.Search.clearBox) end -- no stale query text
   saveLastView()
   render()
 end

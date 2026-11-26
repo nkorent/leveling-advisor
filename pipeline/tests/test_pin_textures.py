@@ -60,29 +60,28 @@ def test_glow(tmp_path):
     assert alphas[0] <= alphas[5] <= alphas[10]
 
 
+def gold(c):
+    r, g, b, a = c
+    return r > 200 and g > 160 and b < 80 and a >= 250
+
+
 def test_bookmark_pixels(tmp_path):
     run(tmp_path)
     img = load(tmp_path / "BookmarkTab.tga")
     assert (img["w"], img["h"], img["bpp"]) == (64, 64, 32) and img["desc"] & 0x20
     assert img["itype"] == 2 and len(img["pix"]) == 64 * 64 * 4
-    assert px(img, 0, 0)[3] == 0 and px(img, 63, 32)[3] == 0
-    r, g, b, a = px(img, 10, 32)
-    assert a >= 240 and 50 <= r <= 100 and b <= 40
-    r, g, b, a = px(img, 55, 32)
-    assert r > 200 and g > 160 and b < 60      # right rim
-    r, g, b, a = px(img, 20, 5)
-    assert r > 200 and g > 160 and b < 60      # top rim
-    r, g, b, a = px(img, 20, 59)
-    assert r > 200 and g > 160 and b < 60      # bottom rim
-    assert px(img, 0, 32)[0] < 120             # no left rim
-    assert px(img, 0, 32)[3] >= 240            # the left edge is straight and filled
-    assert px(img, 63, 2)[3] == 0 and px(img, 20, 62)[3] == 0
-    # the fill darkens downward
-    assert px(img, 10, 12)[0] > px(img, 10, 52)[0]
-    # rounded right corners: the corner pixel itself is empty
-    assert px(img, 55, 4)[3] < 128 and px(img, 55, 59)[3] < 128
-    # the highlight line at y 7 is lighter than the fill under it
-    assert px(img, 20, 7)[0] > px(img, 20, 9)[0]
+    # dark near black-brown body, alpha 0.9
+    r, g, b, a = px(img, 20, 32)
+    assert r < 60 and g < 50 and b < 40 and abs(a - round(0.9 * 255)) <= 2
+    # gold border on the right, top and bottom
+    assert gold(px(img, 61, 32)) and gold(px(img, 20, 2)) and gold(px(img, 20, 62))
+    # the left edge is open: filled but not bordered
+    left = px(img, 0, 32)
+    assert not gold(left) and left[0] < 60 and left[3] >= 200
+    assert not gold(px(img, 1, 32))
+    # rounded right corners: the corner pixels are empty, outside the body is clear
+    assert px(img, 61, 1)[3] < 128 and px(img, 61, 62)[3] < 128
+    assert px(img, 63, 32)[3] == 0 and px(img, 20, 0)[3] < 128 and px(img, 20, 63)[3] < 128
 
 
 def test_deterministic(tmp_path):

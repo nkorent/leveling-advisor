@@ -224,7 +224,7 @@ local function update(v, ctx)
       for i, step in ipairs(route.steps) do
         elements[i] = { kind = "step", step = step, height = RouteView.stepHeight(step) }
       end
-      view.list:set(elements)
+      view.list:set(elements, "zone:" .. tostring(v.mapID))
     end
   end
 
@@ -244,6 +244,7 @@ UI.registerView("zone", { build = build, update = update, title = RouteView.titl
 -- the right.
 ---------------------------------------------------------------------------
 local dv = {}
+RouteView.dungeonParts = dv -- the dungeon page widgets (specs)
 local NOT_RECOMMENDED = "This dungeon is not recommended right now."
 
 local function currentDungeon(v, ctx)
@@ -272,6 +273,8 @@ local function dungeonRow(frame, e)
     local cur = UI.current()
     UI.QuestRow.render(frame, e.row, {
       selected = cur and cur.questID == e.row.questID,
+      -- I1: a quest this character cannot act on says why ("Horde only", ...)
+      sub = QuestInfo.statusText(e.row),
       onClick = function(row) UI.select(row.questID) end,
     })
   end
@@ -374,7 +377,7 @@ local function updateDungeon(v, ctx)
       elements[i] = { kind = "step", step = step, height = RouteView.stepHeight(step) }
     end
     dv.list.box:SetShown(true); dv.list.bar:SetShown(true)
-    dv.list:set(elements)
+    dv.list:set(elements, "dungeon:" .. tostring(v.key))
   end
 
   local place, label = m.info.place, m.title .. " entrance"
@@ -392,13 +395,24 @@ local function updateDungeon(v, ctx)
   dv.entrance:SetText(m.info.entrance)
   dv.pin:SetScript("OnClick", showEntrance)
   dv.mapButton:SetScript("OnClick", showEntrance)
+  dv.pin:SetShown(place ~= nil)
+  if place then dv.mapButton:Enable() else dv.mapButton:Disable() end
   if dv.questList then
     local rows = {}
     for _, id in ipairs(m.quests) do
       local row = ctx.db and ctx.state and QuestInfo.row(ctx.db, id, ctx.state)
-      if row then rows[#rows + 1] = { kind = "quest", row = row, height = UI.QuestRow.HEIGHT } end
+      if row then
+        rows[#rows + 1] = { kind = "quest", row = row, height = UI.QuestRow.HEIGHT,
+          order = #rows, group = QuestInfo.statusGroup(row) }
+      end
     end
-    dv.questList:set(rows)
+    -- I1: what this character can act on first; the data's order within a group
+    table.sort(rows, function(a, b)
+      if a.group ~= b.group then return a.group < b.group end
+      return a.order < b.order
+    end)
+    dv.questsHeading:SetText("All quests (" .. #rows .. ")")
+    dv.questList:set(rows, "dungeon:" .. tostring(v.key))
   end
 end
 

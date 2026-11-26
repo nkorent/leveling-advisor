@@ -142,4 +142,78 @@ describe("dungeon page", function()
       assert.equal("main", ns.UI.current().kind)
     end)
   end)
+  describe("task 12 fold-ins", function()
+    local function patched(fn)
+      local d = {}
+      for k, v in pairs(ns.Advisor.last.rec.dungeon) do d[k] = v end
+      fn(d)
+      return d
+    end
+
+    it("a missing entrance says so instead of (0.0, 0.0)", function()
+      load()
+      local d = patched(function(x) x.entrance = nil end)
+      local m = ns.UI.Model.dungeon(d, ns.Advisor.last.state, ns.Advisor.db)
+      assert.equal("Entrance unknown", m.info.entrance)
+      assert.equal("Entrance unknown", m.steps[#m.steps].sub)
+      assert.is_nil(m.info.place)
+      assert.is_nil(m.steps[#m.steps].place)
+    end)
+
+    it("the page hides the entrance pin and disables the map button without an entrance", function()
+      load()
+      ns.Advisor.last.rec.dungeon.entrance = nil
+      ns.UI.show({ kind = "dungeon", key = "BFD" })
+      assert.truthy(fake.visible(fake.text("Entrance unknown")))
+      local spy = ui.spy(ns.UI.Nav, "showPlace", function() return true end)
+      local btn = fake.text("Show Entrance on Map")
+      assert.is_false(btn.enabled ~= false)
+      fake.click(btn)
+      assert.equal(0, spy.n)
+      assert.is_false(fake.visible(ns.UI.RouteView.dungeonParts.pin))
+      assert.same({}, env.errors)
+    end)
+
+    it("zero pickups: only the entrance step and a 0 of 0 progress", function()
+      load()
+      local d = patched(function(x) x.pickups = {} end)
+      local m = ns.UI.Model.dungeon(d, ns.Advisor.last.state, ns.Advisor.db)
+      assert.equal(1, #m.steps)
+      assert.is_true(m.steps[1].entrance)
+      assert.is_true(m.steps[1].current)
+      assert.equal("0 of 0 done", m.progress)
+    end)
+
+    -- I1 (final review): rows carry their status; impossible quests never
+    -- look available, and the actionable ones come first.
+    it("quest rows carry their status, actionable ones first", function()
+      ns, env, fake = ui.load({ state = "S20", patch = function(data)
+        local q = data.dungeons.BFD.quests
+        table.insert(q, 1, 6382)   -- Horde only
+        table.insert(q, 2, 7002)   -- Warrior only
+        table.insert(q, 3, 4762)   -- completed
+      end })
+      ns.UI.show({ kind = "dungeon", key = "BFD" })
+      assert.truthy(fake.visible(fake.text("All quests (7)")))
+      local order = {}
+      for _, r in ipairs(ns.UI.RouteView.dungeonParts.questList.box.rows) do
+        order[#order + 1] = r.element.row.questID
+      end
+      assert.same({ 1199, 1275, 6563, 6922, 4762, 6382, 7002 }, order)
+      local function part(id) return questRow(id).laQuest end
+      assert.equal("Horde only", part(6382).sub.text)
+      assert.equal("Other class", part(7002).sub.text)
+      assert.equal("Completed", part(4762).sub.text)
+      assert.is_true(part(6382).marker.desaturated)
+      assert.not_equal("Available", part(1199).sub.text)
+      assert.falsy(part(1199).marker.desaturated)
+      assert.same({}, env.errors)
+    end)
+
+    it("the quest list is labelled with its own count", function()
+      load()
+      ns.UI.show({ kind = "dungeon", key = "BFD" })
+      assert.truthy(fake.visible(fake.text("All quests (4)")))
+    end)
+  end)
 end)

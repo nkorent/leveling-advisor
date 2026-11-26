@@ -172,6 +172,29 @@ describe("quest detail page", function()
     assert.equal("DRUID", m5061.tags.class)
   end)
 
+  -- I3 (final review): another class's class quest names that class.
+  it("another class's class quest is tagged with its own class, not the player's", function()
+    load({ state = ui.with("S18", { classFile = "WARRIOR", classMask = 1 }) })
+    local QI = ns.UI.QuestInfo
+    local r = QI.row(db, 5061, state)   -- Aquatic Form, druid only
+    assert.equal("DRUID", r.tags.class)
+    assert.equal("Druid", QI.tags(r, db:quest(5061))[1].text)
+    local d = QI.detail(db, 5061, state)
+    assert.equal("Druid", d.tags[1].text)
+  end)
+
+  -- I5 (final review): an advisor refresh of the same quest keeps the scroll.
+  it("the detail page keeps its scroll on a refresh and resets it for another quest", function()
+    load()
+    ns.UI.show({ kind = "zone", mapID = 1439, questID = 4763 })
+    local d = ns.UI.RouteView.detail
+    d.scroll:SetVerticalScroll(120)
+    fake.setState(ui.with("S18"))   -- an advisor result re-renders the open book
+    assert.equal(120, d.scroll.verticalScroll)
+    ns.UI.select(4730)
+    assert.equal(0, d.scroll.verticalScroll)
+  end)
+
   it("subLine falls back to the giver without a Turn in prefix", function()
     load()
     local QI = ns.UI.QuestInfo

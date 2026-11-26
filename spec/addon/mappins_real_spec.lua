@@ -13,7 +13,7 @@ local FILES = {
   "Engine/Travel.lua", "Engine/Candidates.lua", "Engine/ZoneScore.lua",
   "Engine/Sections.lua", "Engine/Dungeons.lua", "Engine/Route.lua",
   "Engine/RouteImprove.lua", "Engine/Engine.lua",
-  "Core/Util.lua", "Core/Init.lua", "Core/Settings.lua", "UI/MapPins.lua",
+  "Core/Util.lua", "Core/Init.lua", "Core/Settings.lua", "Core/Advisor.lua", "UI/MapPins.lua",
 }
 
 local have = exists("LevelingAdvisor/Data/Quests.lua") and exists("LevelingAdvisor/Data/NPCs.lua")

@@ -227,4 +227,19 @@ describe("quest items and rewards", function()
     assert.same({ 15204, 15202, 15203 }, ids)
     assert.equal(0, #minis(7003))
   end)
+
+  -- I6 (final review): the ItemButton art is drawn for 37 px, so the mini
+  -- buttons are 37 px buttons scaled down (slot frame and border shrink too).
+  it("mini reward buttons are 37 px item buttons scaled to 22 px", function()
+    load()
+    local b = Items.newButton(fake.newFrame("Frame"), 22, true)
+    assert.same({ 37, 37 }, { b.width, b.height })
+    assert.near(22 / 37, b:GetScale(), 1e-9)
+    ns.UI.open()
+    local f = fake.rowFrame(4763)
+    local mini = fake.find(function(w) return w.laMini and w.laItemID == 15203 and w.parent and w.parent.parent == f end)
+    -- the anchor offset is in the button's own (scaled) units: 26 + 8 px from the row's edge
+    local _, _, _, x = mini:GetPoint(1)
+    assert.near(-(26 + 8) * 37 / 22, x, 1e-6)
+  end)
 end)
