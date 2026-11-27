@@ -103,6 +103,19 @@ describe("quest items and rewards", function()
     assert.is_nil(fake.itemButtonVertex[b3])
   end)
 
+  it("a recycled button loses the red tint of the item it showed before", function()
+    load({ state = ui.with("S18", { classFile = "DRUID" }) })
+    local b = btn()
+    Items.setItem(b, { itemID = 15204 })   -- wand: a druid cannot use it
+    assert.same({ 1, 0.1, 0.1 }, fake.itemButtonVertex[b])
+    Items.setItem(b, { itemID = 15202 })   -- leggings: usable
+    assert.same({ 1, 1, 1 }, fake.itemButtonVertex[b])
+    Items.setItem(b, { itemID = 15204, usable = true })
+    assert.same({ 1, 1, 1 }, fake.itemButtonVertex[b])
+    Items.setItem(b, { itemID = 15204 })
+    assert.same({ 1, 0.1, 0.1 }, fake.itemButtonVertex[b])
+  end)
+
   it("tooltip with the advisor note", function()
     load()
     local b = btn(); Items.setItem(b, { itemID = 12355, count = 1, have = 0, note = "needed" }, "The Blackwood Corrupted")

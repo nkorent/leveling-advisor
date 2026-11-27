@@ -246,11 +246,12 @@ local function addFocus(pins, mapID, state)
 end
 
 -- The pins the map shows for mapID: the recommended quests (pinsAll) plus the
--- focus pin.
+-- focus pin. No map (the world map before it is first opened) shows nothing.
 function MapPins.model(mapID)
   local A = ns.Advisor
   local last = A and A.last
   local pins = {}
+  if mapID == nil then return pins end
   if ns.Settings.get("pinsAll") and last and last.rec then
     pins = MapPins.build(last.rec, A.db, mapID, zoneRoute(A, mapID), last.state)
   end

@@ -30,6 +30,20 @@ describe("Dungeons.recommend", function()
     assert.is_nil(Engine.compute(db, s).dungeon)
   end)
 
+  it("elite quests off keeps BFD and its four pickups (dungeon quests are not elite filler)", function()
+    local s = with(S20, { settings = { elite = false, dungeons = true } })
+    local d = Engine.compute(db, s).dungeon
+    assert.equals("BFD", d.key)
+    assert.same({ 1199, 1275, 6563, 6922 }, pickupIDs(d))
+  end)
+
+  it("never recommends a dungeon with a single available quest (Wailing Caverns at 20)", function()
+    -- WC is in its level window at 20 and 1486 is eligible, but one quest is not a run
+    local d = Engine.compute(db, S20).dungeon
+    assert.equals("BFD", d.key)
+    assert.is_nil(H.pickupFor(d, 1486))
+  end)
+
   it("respects the setting", function()
     local s = with(S20, { settings = { elite = true, dungeons = false } })
     assert.is_nil(Engine.compute(db, s).dungeon)

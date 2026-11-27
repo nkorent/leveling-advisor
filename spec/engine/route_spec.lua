@@ -59,6 +59,13 @@ describe("Route.forZone", function()
     assert.is_nil(stepOf(Route.forZone(db, S20, 1439, c, {}), 1275, "pickup"))
     assert.is_not_nil(stepOf(Route.forZone(db, S20, 1439, c, { dungeonKey = "BFD" }), 1275, "pickup"))
   end)
+  it("leaves out another dungeon's quest when BFD is recommended", function()
+    -- 1486 (Wailing Caverns) is eligible at S20 and its giver stands in Darkshore
+    local c = Candidates.build(db, S20)
+    assert.equals("eligible", H.candidateFor(c, 1486).status)
+    assert.is_nil(stepOf(Route.forZone(db, S20, 1439, c, { dungeonKey = "BFD" }), 1486, "pickup"))
+    assert.is_not_nil(stepOf(Route.forZone(db, S20, 1439, c, { dungeonKey = "WC" }), 1486, "pickup"))
+  end)
   it("lists each step's actions, counts and turn-in XP (greedy order)", function()
     local steps = Route.forZone(db, S18, 1439, Candidates.build(db, S18), { improve = false })
     assert.same({

@@ -52,6 +52,37 @@ jobs:
             exit 1
           fi
 
+      - name: Set up Python
+        if: github.event_name == 'push' || inputs.build_only
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The pipeline's test dependencies are the pinned [project] dependencies of pyproject.toml.
+      - name: Install pipeline test dependencies
+        if: github.event_name == 'push' || inputs.build_only
+        run: |
+          python -m pip install --upgrade pip
+          python - > "$RUNNER_TEMP/requirements.txt" <<'PY'
+          import tomllib
+          with open("pyproject.toml", "rb") as f:
+              print("\n".join(tomllib.load(f)["project"]["dependencies"]))
+          PY
+          python -m pip install -r "$RUNNER_TEMP/requirements.txt"
+
+      # Tests that need data/vendor, data/raw or data/build (not in git) skip themselves.
+      - name: Pipeline tests
+        if: github.event_name == 'push' || inputs.build_only
+        run: python -m pytest pipeline/tests -q -rs
+
+      # tools/engine-smoke.lua as assertions, and the engine invariants on the shipped
+      # Data/*.lua (tools/build.sh runs them again with the whole busted suite).
+      - name: Engine smoke and invariants on the shipped data
+        if: github.event_name == 'push' || inputs.build_only
+        run: |
+          eval "$(luarocks --lua-version=5.1 path)"
+          busted spec/engine/engine_smoke_spec.lua spec/engine/real_data_spec.lua spec/addon/mappins_real_spec.lua
+
       - name: Build
         if: github.event_name == 'push' || inputs.build_only
         run: tools/build.sh

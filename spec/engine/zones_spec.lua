@@ -53,6 +53,27 @@ describe("Candidates and ZoneScore", function()
     assert.same({ 1439, 1440, 1432 }, mapIDs(z)) -- Durotar (1411) is Horde-only
   end)
 
+  it("never lists the other faction's zone, even with quests the player can take there", function()
+    -- A neutral (faction 3) quest in Horde Durotar, worth more than Loch Modan's whole score.
+    local function patched(zoneFaction)
+      local data = H.data()
+      local r = {}
+      for k, v in pairs(data.quests[840]) do r[k] = v end
+      r[1], r[2], r[5], r[6], r[17] = "Neutral Errand", 3, 16, 18, 4000
+      data.quests[8000] = r
+      data.zones[1411].faction = zoneFaction
+      return ns.DB.new(data)
+    end
+    local hordeDb = patched(2)
+    local c = Candidates.build(hordeDb, S18)
+    assert.equals("eligible", H.candidateFor(c, 8000).status)
+    assert.same({ 1439, 1440, 1432 }, mapIDs(ZoneScore.rank(hordeDb, S18, c)))
+    -- control: the same quest in a contested Durotar does rank, so only the faction rule hides it
+    local openDb = patched(3)
+    local ranked = mapIDs(ZoneScore.rank(openDb, S18, Candidates.build(openDb, S18)))
+    assert.is_truthy(table.concat(ranked, ","):find("1411", 1, true), table.concat(ranked, ","))
+  end)
+
   it("elite setting off drops elite quests from candidates", function()
     local s = with(S18, { settings = { elite = false, dungeons = true } })
     assert.is_nil(H.candidateFor(Candidates.build(db, s), 1000))

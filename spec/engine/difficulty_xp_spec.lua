@@ -26,6 +26,14 @@ describe("Difficulty and XP", function()
     assert.equals(1875, XP.estimate(q, 18, { [4763] = { [18] = 1875 } }))
   end)
 
+  it("xp rounds to the nearest 5, not down", function()
+    local q = { id = 1, xp = 1235, level = 18 }
+    assert.equals(990, XP.estimate(q, 24))   -- 1235 x 0.8 = 988
+    assert.equals(740, XP.estimate(q, 25))   -- 1235 x 0.6 = 741
+    assert.equals(1235, XP.estimate(q, 18))  -- already a multiple of 5
+    assert.equals(125, XP.estimate(q, 28))   -- 1235 x 0.1 = 123.5
+  end)
+
   it("color is grey when a level is missing", function()
     assert.equals("grey", D.color(nil, 18, 12))
     assert.equals("grey", D.color(18, nil, 12))

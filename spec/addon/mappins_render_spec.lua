@@ -1,4 +1,6 @@
 local addon = require("spec.helpers.addon")
+local mapcanvas = require("spec.helpers.mapcanvas")
+local PIN_TEMPLATE = mapcanvas.template("LevelingAdvisor/UI/MapPins.xml", "LevelingAdvisorMapPinTemplate")
 
 local FILES = { "Core/Util.lua", "Core/Init.lua", "Core/Settings.lua", "UI/MapPins.lua" }
 
@@ -25,30 +27,27 @@ local function newTexture()
   return t
 end
 
-local function mixin(target, ...)
-  for i = 1, select("#", ...) do
-    for k, v in pairs((select(i, ...))) do target[k] = v end
-  end
-  return target
-end
-
--- Builds a fake client; opts.noAtlas, opts.noWaypoint, opts.noWorldMap.
+-- Builds a fake client; opts.noAtlas, opts.noWaypoint, opts.noWorldMap. The world map is
+-- the shared map canvas fake (spec/helpers/mapcanvas.lua) with the XML pin template; the
+-- pin frames, holders and textures are this spec's own light fakes.
 local function client(opts)
   opts = opts or {}
-  local c = { providers = {}, pins = {}, tooltip = { lines = {} }, said = {}, hooks = {} }
-  local pinBase = {}
-  function pinBase:UseFrameLevelType(t) self.levelType = t end
-  function pinBase:SetScalingLimits(...) self.scaling = { ... } end
-  function pinBase:SetPosition(x, y) self.pos = { x, y } end
-  function pinBase:SetSize(w, h) self.w, self.h = w, h end
-  function pinBase:CreateTexture() local t = newTexture(); self.textures = self.textures or {}; self.textures[#self.textures + 1] = t; return t end
-  function pinBase:EnableMouse() end
-  -- The frame's own (C) methods live in its metatable, under the mixin copies.
+  local c = { tooltip = { lines = {} }, said = {}, hooks = {} }
+  local mixins = mapcanvas.mixins()
+  -- The pin frame's own (C) methods live in its metatable, under the mixin copies.
   local frameMethods = {}
   function frameMethods:SetPassThroughButtons(...)
     self.passThrough = { ... }
     c.passCalls = (c.passCalls or 0) + 1
   end
+  function frameMethods:SetSize(w, h) self.w, self.h = w, h end
+  function frameMethods:CreateTexture() local t = newTexture(); self.textures = self.textures or {}; self.textures[#self.textures + 1] = t; return t end
+  function frameMethods:EnableMouse() end
+  function frameMethods:SetScript(name, fn) self.scripts[name] = fn end
+  function frameMethods:GetScript(name) return self.scripts[name] end
+  function frameMethods:Show() self.shown = true end
+  function frameMethods:Hide() self.shown = false end
+  c.frameMethods = frameMethods
 
   local function newHolder(opts2)
     local h = {}
@@ -69,29 +68,22 @@ local function client(opts)
     return h
   end
 
-  local map = { id = 1411 }
-  function map:GetMapID() return self.id end
-  function map:RemoveAllPinsByTemplate(tpl)
-    local keep = {}
-    for _, p in ipairs(c.pins) do if p.template ~= tpl then keep[#keep + 1] = p end end
-    c.pins = keep
-  end
-  function map:AcquirePin(tpl, ...)
-    local pin = mixin(setmetatable({ template = tpl, Icon = newTexture() }, { __index = frameMethods }), pinBase)
-    mixin(pin, c.env.LevelingAdvisorMapPinMixin or {})
-    c.pins[#c.pins + 1] = pin
-    if pin.OnLoad then pin:OnLoad() end
-    pin:OnAcquired(...)
-    return pin
-  end
-  c.map = map
-
+  -- The world map is the map canvas (as on the client); c.pins are its acquired pins.
   local wmf = { shown = false }
-  function wmf:AddDataProvider(p) c.providers[#c.providers + 1] = p; p.map = map end
   function wmf:HookScript(name, fn) c.hooks[name] = fn end
   function wmf:IsShown() return self.shown end
-  function wmf:GetMapID() return map.id end
-  c.wmf = wmf
+  mapcanvas.attach(wmf, {
+    mapID = 1411,
+    templates = { PIN_TEMPLATE },
+    env = setmetatable({}, { __index = function(_, k) return c.env[k] end }),
+    newFrame = function(_, _, name, t)
+      local pin = setmetatable({ template = name, scripts = {}, Icon = newTexture() }, { __index = frameMethods })
+      if t.size then pin.w, pin.h = t.size[1], t.size[2] end
+      return pin
+    end,
+  })
+  c.map, c.wmf = wmf, wmf
+  c.providers, c.pins = wmf.providers, wmf.pins
 
   local tip = c.tooltip
   function tip:SetOwner(o, anchor) self.owner, self.anchor = o, anchor; self.lines = {} end
@@ -104,11 +96,10 @@ local function client(opts)
   function tip:Hide() self.shown = false end
 
   local extra = {
-    CreateFromMixins = function(...) return mixin({}, ...) end,
-    MapCanvasDataProviderMixin = {
-      GetMap = function(self) return self.map end,
-    },
-    MapCanvasPinMixin = pinBase,
+    CreateFromMixins = mixins.CreateFromMixins,
+    Mixin = mixins.Mixin,
+    MapCanvasDataProviderMixin = mixins.MapCanvasDataProviderMixin,
+    MapCanvasPinMixin = mixins.MapCanvasPinMixin,
     GameTooltip = tip,
     C_Texture = { GetAtlasInfo = function(a) if opts.noAtlas then return nil end; return { atlas = a } end },
     CreateFrame = function(_, _, parent)
@@ -217,7 +208,7 @@ describe("MapPins rendering", function()
   it("only shows pins for the displayed map", function()
     local c = setup()
     local p = install(c)
-    c.map.id = 1412
+    c.map.mapID = 1412
     p:RefreshAllData()
     assert.equals(0, #c.pins)
   end)
@@ -384,8 +375,7 @@ describe("MapPins rendering", function()
         if parent then parent.holders = { h } end
         return h
       end
-      local pinBase = c.extra.MapCanvasPinMixin
-      pinBase.SetSize = function() error("boom") end
+      c.frameMethods.SetSize = function() error("boom") end
       assert.has_no.errors(function() install(c):RefreshAllData() end)
       assert.equals(2, #c.pins)
     end)
@@ -513,15 +503,12 @@ describe("MapPins rendering", function()
 
   describe("map canvas mouse overrides", function()
     -- Blizzard's AcquirePin replaces OnMouseUp with a handler that calls
-    -- pin:OnMouseUp(btn, upInside) then pin:OnClick(btn); motion may route
-    -- through pin.OnMouseEnter / OnMouseLeave.
+    -- pin:OnMouseUp(btn, upInside) then pin:OnClick(btn); motion routes through
+    -- pin.OnMouseEnter / OnMouseLeave (the shared canvas fake installs both).
     local function canvasMouseUp(pin, btn)
-      pin:OnMouseUp(btn, true)
-      pin:OnClick(btn)
+      pin:GetScript("OnMouseUp")(pin, btn, true)
     end
     local function acquire(c)
-      c.extra.MapCanvasPinMixin.OnMouseUp = function() end
-      c.extra.MapCanvasPinMixin.OnClick = function() end
       install(c):RefreshAllData()
       return c.pins[1]
     end
@@ -558,6 +545,26 @@ describe("MapPins rendering", function()
       pin:OnMouseLeave()
       assert.is_false(c.tooltip.shown)
       assert.equals(1, pin.laHolder.scale)
+    end)
+
+    it("the canvas's OnEnter / OnLeave scripts reach the same hover state", function()
+      local c = setup()
+      local pin = acquire(c)
+      pin:GetScript("OnEnter")(pin)
+      assert.is_true(c.tooltip.shown)
+      assert.equals(1.35, pin.laHolder.scale)
+      pin:GetScript("OnLeave")(pin)
+      assert.is_false(c.tooltip.shown)
+    end)
+
+    it("a refresh releases the pins and acquires the pooled frames again", function()
+      local c = setup()
+      local p = install(c)
+      p:RefreshAllData()
+      local first = c.pins[1]
+      p:RefreshAllData()
+      assert.equals(2, #c.pins)
+      assert.is_true(first == c.pins[1] or first == c.pins[2])
     end)
   end)
 
@@ -597,7 +604,7 @@ describe("MapPins rendering", function()
       c.ns.Advisor.plan = function(mapID) asked[#asked + 1] = mapID; return plan(mapID) end
       local p = install(c)
       p:RefreshAllData()
-      c.map.id = 1412
+      c.map.mapID = 1412
       p:RefreshAllData()
       assert.same({ 1411, 1412 }, asked)
     end)

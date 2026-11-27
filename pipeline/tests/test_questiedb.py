@@ -61,6 +61,26 @@ def test_add_remove_operations(qdb):
                                        {"map_id": 1429, "x": 40.5, "y": 60.5}]
 
 
+def test_add_of_a_present_value_keeps_one_copy(tmp_path):
+    """`_add` appends only absent values: 3 is already there (generated layer), 4 comes twice."""
+    root = tmp_root(tmp_path)
+    traces = root / "src/corrections/Forever/traces/foreverQuestTraces.lua"
+    text = traces.read_text(encoding="utf-8")
+    assert "[questKeys.preQuestSingle_add] = {4}," in text
+    traces.write_text(text.replace("[questKeys.preQuestSingle_add] = {4},",
+                                   "[questKeys.preQuestSingle_add] = {3, 4, 4},"), encoding="utf-8")
+    q = load_questiedb(root, BLACKLIST).quests[100]
+    assert q["pre_any"] == [1, 2, 3, 4, 5, 6]
+
+
+def test_operate_list_add_is_a_set_union_in_operand_order():
+    from pipeline.questiedb import _operate
+    assert _operate("idarray", [1, 2], [2, 3, 3, 1], None) == [1, 2, 3]
+    assert _operate("idarray", None, [5, 5], None) == [5]
+    # grouped lists (starter groups): the same rule inside each group, other groups kept
+    assert _operate("questgivers", {1: [10], 2: [20]}, {1: [10, 11, 11]}, None) == {1: [10, 11], 2: [20]}
+
+
 def test_invalid_operations_are_rejected_and_listed(qdb):
     q = qdb.quests[201]
     assert q["pre_all"] is None                     # replacement and operation on one field

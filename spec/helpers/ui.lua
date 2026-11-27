@@ -13,13 +13,18 @@
 --   noData   do not load spec/fixtures/data_small.lua
 --   patch    fn(ns.Data), runs before login
 --   noAtlas  C_Texture.GetAtlasInfo returns nil for every atlas
+--   atlases  extra atlas names GetAtlasInfo knows (default: ui.ATLASES, the ones
+--            confirmed on the 1.60.1 client)
 --   db, chardb  the saved variables found at ADDON_LOADED
 --   globals  extra env globals (set before the addon files load)
 --   without  list of global names removed from the fake env
 --   questMap "tabs" (QuestMapFrame with QuestsTab and MapLegendTab), "plain"
 --            (QuestMapFrame without native tabs) or nil (no QuestMapFrame)
 --   questLog true adds a QuestLogFrame
---   worldMap true adds WorldMapFrame (Show, SetMapID, AddDataProvider, HookScript)
+--   worldMap true adds WorldMapFrame, a map canvas (spec/helpers/mapcanvas.lua: SetMapID,
+--            AddDataProvider, AcquirePin with the UI/MapPins.xml template; its
+--            acquired pins are WorldMapFrame.pins). CreateFromMixins, Mixin,
+--            MapCanvasPinMixin and MapCanvasDataProviderMixin always exist.
 --   art      "tiles": C_Map.GetMapArtLayers / GetMapArtLayerTextures give a 1002 x 668
 --            layer of 256 px tiles (12 file IDs) for every map; nil: no art API
 --   minimap  true adds a 140 x 140 Minimap centred at (500, 500) with effective scale 1,
@@ -47,12 +52,22 @@
 -- env.errors collects errors sent to geterrorhandler() (assert it is empty in
 -- "no error" tests: the addon pcalls listeners, events and refreshes).
 --
--- Widget fake: the methods below are implemented; any other capitalised
--- method is recorded in w.calls as {name, ...} and returns nil. Because of
--- that, an unset capitalised FIELD (w.Inset on a plain frame) reads as a
--- function: addon code checks child frames with type(x) == "table".
+-- Widget fake: strict, like the client. Each widget kind has the method set of
+-- its real widget type (ui.API[kind], built from the retail hierarchy:
+-- ScriptRegion < Region < Texture / FontString, ScriptRegion < Frame < Button
+-- < CheckButton ...). A method of that set is the implementation below, or a
+-- stub that records the call in w.calls as {name, ...} and returns nil. Any
+-- other key reads as nil, so calling a misspelt or missing method raises
+-- "attempt to call method 'X' (a nil value)", as on the client. CreateFrame
+-- rejects unknown frame types.
+-- EditBox:SetText fires OnTextChanged(self, false) like the client;
+-- fake.type sets the text the way typing does and fires OnTextChanged(self, true).
+-- ScrollBox lists hand their row frames back in reversed order on every
+-- SetDataProvider (a pool gives no order guarantee), so stale per-frame state
+-- shows up.
 local addon = require("spec.helpers.addon")
 local load_addon = require("spec.helpers.load_addon")
+local mapcanvas = require("spec.helpers.mapcanvas")
 
 local ADDON_DIR = "LevelingAdvisor"
 local FIXTURE = "spec/fixtures/data_small.lua"
@@ -74,6 +89,14 @@ local function tocFiles()
 end
 
 ui.FILES = tocFiles()
+
+-- The map pin template from UI/MapPins.xml (parsed once).
+local pinTemplate
+function ui.pinTemplate()
+  pinTemplate = pinTemplate
+    or assert(mapcanvas.template(ADDON_DIR .. "/UI/MapPins.xml", "LevelingAdvisorMapPinTemplate"))
+  return pinTemplate
+end
 
 ---------------------------------------------------------------------------
 -- Small utilities.
@@ -176,7 +199,11 @@ function W:IsVisible()
   return true
 end
 
-function W:SetText(t) self.text = t end
+-- EditBox:SetText fires OnTextChanged(self, false), as on the client.
+function W:SetText(t)
+  self.text = t
+  if self.kind == "EditBox" then run(self, "OnTextChanged", false) end
+end
 function W:GetText() return self.text end
 function W:SetFormattedText(fmt, ...) self.text = string.format(fmt, ...) end
 function W:SetTextColor(r, g, b, a) self.textColor = { r, g, b, a } end
@@ -293,18 +320,169 @@ function W:SetFocus() self.focused = true end
 function W:ClearFocus() self.focused = false end
 function W:HighlightText() self.highlighted = true end
 
-local WidgetMT = {
-  __index = function(_, k)
-    local m = W[k]
-    if m then return m end
-    if type(k) == "string" and k:match("^%u") then
-      return function(self, ...)
-        self.calls[#self.calls + 1] = { k, ... }
-        return nil
-      end
+---------------------------------------------------------------------------
+-- The method sets of the client's widget types (retail engine, 1.60.1). Only
+-- these names resolve on a widget of that kind; see the note at the top.
+---------------------------------------------------------------------------
+local function list(...)
+  local out = {}
+  for i = 1, select("#", ...) do
+    for _, k in ipairs((select(i, ...))) do out[#out + 1] = k end
+  end
+  return out
+end
+
+local SCRIPT_REGION = {
+  "GetName", "GetObjectType", "IsObjectType", "GetParent", "SetParent", "IsForbidden",
+  "SetScript", "GetScript", "HookScript", "HasScript",
+  "Show", "Hide", "SetShown", "IsShown", "IsVisible",
+  "SetPoint", "GetPoint", "GetNumPoints", "ClearAllPoints", "ClearPoint", "SetAllPoints",
+  "AdjustPointsOffset", "GetPointByName",
+  "SetSize", "SetWidth", "SetHeight", "GetSize", "GetWidth", "GetHeight",
+  "GetLeft", "GetRight", "GetTop", "GetBottom", "GetCenter", "GetRect", "GetScaledRect",
+  "GetBoundsRect", "IsRectValid", "IsAnchoringRestricted",
+  "EnableMouse", "IsMouseEnabled", "IsMouseOver", "EnableMouseMotion", "EnableMouseClicks",
+  "SetMouseClickEnabled", "SetMouseMotionEnabled", "IsMouseClickEnabled", "IsMouseMotionEnabled",
+  "IsMouseMotionFocus", "SetPassThroughButtons",
+  "SetAlpha", "GetAlpha", "GetEffectiveAlpha", "SetIgnoreParentAlpha", "IsIgnoringParentAlpha",
+  "GetEffectiveScale", "CreateAnimationGroup", "GetAnimationGroups", "StopAnimating",
+  "IsDragging", "CanChangeProtectedState", "IsProtected",
+}
+local REGION = { "SetDrawLayer", "GetDrawLayer", "SetVertexColor", "GetVertexColor" }
+local TEXTURE = {
+  "SetTexture", "GetTexture", "GetTextureFileID", "GetTextureFilePath", "SetAtlas", "GetAtlas",
+  "SetTexCoord", "GetTexCoord", "SetColorTexture", "SetGradient", "SetBlendMode", "GetBlendMode",
+  "SetDesaturated", "IsDesaturated", "SetDesaturation", "GetDesaturation", "SetRotation",
+  "GetRotation", "SetMask", "AddMaskTexture", "RemoveMaskTexture", "GetNumMaskTextures",
+  "SetHorizTile", "SetVertTile", "SetTexelSnappingBias", "SetSnapToPixelGrid", "SetNonBlocking",
+}
+local FONT_INSTANCE = {
+  "SetFont", "GetFont", "SetFontObject", "GetFontObject", "SetTextColor", "GetTextColor",
+  "SetJustifyH", "GetJustifyH", "SetJustifyV", "GetJustifyV", "SetShadowColor", "GetShadowColor",
+  "SetShadowOffset", "GetShadowOffset", "SetSpacing", "GetSpacing", "SetIndentedWordWrap",
+}
+local FONT_STRING = {
+  "SetText", "GetText", "SetFormattedText", "SetWordWrap", "CanWordWrap", "SetNonSpaceWrap",
+  "CanNonSpaceWrap", "SetMaxLines", "GetMaxLines", "GetNumLines", "GetStringWidth",
+  "GetStringHeight", "GetUnboundedStringWidth", "GetWrappedWidth", "IsTruncated", "SetTextHeight",
+  "SetTextScale", "GetTextScale", "GetLineHeight", "SetTextToFit",
+}
+local FRAME = {
+  "CreateTexture", "CreateFontString", "CreateMaskTexture", "CreateLine",
+  "RegisterEvent", "UnregisterEvent", "UnregisterAllEvents", "IsEventRegistered", "RegisterUnitEvent",
+  "SetFrameStrata", "GetFrameStrata", "SetFrameLevel", "GetFrameLevel", "SetFixedFrameStrata",
+  "SetFixedFrameLevel", "SetToplevel", "IsToplevel", "Raise", "Lower",
+  "SetMovable", "IsMovable", "SetResizable", "IsResizable", "StartMoving", "StartSizing",
+  "StopMovingOrSizing", "SetUserPlaced", "IsUserPlaced", "SetDontSavePosition", "GetDontSavePosition",
+  "SetClampedToScreen", "IsClampedToScreen", "SetClampRectInsets", "SetResizeBounds",
+  "RegisterForDrag", "EnableMouseWheel", "IsMouseWheelEnabled", "EnableKeyboard",
+  "IsKeyboardEnabled", "SetPropagateKeyboardInput", "SetHitRectInsets", "GetHitRectInsets",
+  "SetScale", "GetScale", "SetClipsChildren", "DoesClipChildren",
+  "GetChildren", "GetNumChildren", "GetRegions", "GetNumRegions", "SetID", "GetID",
+  "SetAttribute", "GetAttribute", "SetHyperlinksEnabled", "SetFlattensRenderLayers",
+  "SetUsingParentLevel", "SetIgnoreParentScale", "IsIgnoringParentScale",
+  "SetIgnoreParentAlpha", "SetFrameBuffer", "SetDrawLayerEnabled",
+}
+local BUTTON = {
+  "RegisterForClicks", "Click", "Enable", "Disable", "SetEnabled", "IsEnabled",
+  "SetText", "GetText", "SetFormattedText", "GetTextWidth", "GetTextHeight", "SetFontString",
+  "GetFontString", "SetNormalFontObject", "GetNormalFontObject", "SetHighlightFontObject",
+  "GetHighlightFontObject", "SetDisabledFontObject", "GetDisabledFontObject",
+  "SetNormalTexture", "GetNormalTexture", "SetPushedTexture", "GetPushedTexture",
+  "SetHighlightTexture", "GetHighlightTexture", "SetDisabledTexture", "GetDisabledTexture",
+  "SetNormalAtlas", "SetPushedAtlas", "SetHighlightAtlas", "SetDisabledAtlas",
+  "SetButtonState", "GetButtonState", "LockHighlight", "UnlockHighlight", "IsHighlightLocked",
+  "SetMotionScriptsWhileDisabled", "SetPushedTextOffset", "GetPushedTextOffset",
+}
+local CHECK_BUTTON = {
+  "SetChecked", "GetChecked", "SetCheckedTexture", "GetCheckedTexture",
+  "SetDisabledCheckedTexture", "GetDisabledCheckedTexture",
+}
+local EDIT_BOX = {
+  "SetText", "GetText", "Insert", "SetFocus", "ClearFocus", "HasFocus", "HighlightText",
+  "SetAutoFocus", "IsAutoFocus", "SetMaxLetters", "GetMaxLetters", "SetMultiLine", "IsMultiLine",
+  "SetNumeric", "IsNumeric", "GetNumber", "SetNumber", "SetCursorPosition", "GetCursorPosition",
+  "SetTextInsets", "GetTextInsets", "SetCountInvisibleLetters", "SetHistoryLines",
+  "AddHistoryLine", "ClearHistory", "SetBlinkSpeed", "Enable", "Disable", "SetEnabled",
+  "IsEnabled", "SetSecurityDisablePaste", "SetHighlightColor",
+}
+local SCROLL_FRAME = {
+  "SetScrollChild", "GetScrollChild", "SetVerticalScroll", "GetVerticalScroll",
+  "SetHorizontalScroll", "GetHorizontalScroll", "GetVerticalScrollRange",
+  "GetHorizontalScrollRange", "UpdateScrollChildRect",
+}
+local VALUE_BAR = { "SetMinMaxValues", "GetMinMaxValues", "SetValue", "GetValue", "SetOrientation",
+  "GetOrientation" }
+local SLIDER = {
+  "SetValueStep", "GetValueStep", "SetObeyStepOnDrag", "SetStepsPerPage", "SetThumbTexture",
+  "GetThumbTexture", "Enable", "Disable", "SetEnabled", "IsEnabled",
+}
+local STATUS_BAR = {
+  "SetStatusBarTexture", "GetStatusBarTexture", "SetStatusBarColor", "GetStatusBarColor",
+  "SetStatusBarAtlas", "SetReverseFill", "GetReverseFill", "SetFillStyle", "GetFillStyle",
+  "SetRotatesTexture",
+}
+local GAME_TOOLTIP = {
+  "SetOwner", "GetOwner", "IsOwned", "ClearLines", "SetText", "AddLine", "AddDoubleLine",
+  "AddTexture", "NumLines", "SetItemByID", "SetHyperlink", "SetMinimumWidth", "SetPadding",
+  "FadeOut",
+}
+
+local function apiSet(...)
+  local t = {}
+  for _, k in ipairs(list(...)) do t[k] = true end
+  return t
+end
+
+-- kind -> { [methodName] = true }
+ui.API = {
+  Texture = apiSet(SCRIPT_REGION, REGION, TEXTURE),
+  FontString = apiSet(SCRIPT_REGION, REGION, FONT_INSTANCE, FONT_STRING),
+  Frame = apiSet(SCRIPT_REGION, FRAME),
+  EventFrame = apiSet(SCRIPT_REGION, FRAME),
+  Button = apiSet(SCRIPT_REGION, FRAME, BUTTON),
+  ItemButton = apiSet(SCRIPT_REGION, FRAME, BUTTON),
+  CheckButton = apiSet(SCRIPT_REGION, FRAME, BUTTON, CHECK_BUTTON),
+  EditBox = apiSet(SCRIPT_REGION, FRAME, FONT_INSTANCE, EDIT_BOX),
+  ScrollFrame = apiSet(SCRIPT_REGION, FRAME, SCROLL_FRAME),
+  Slider = apiSet(SCRIPT_REGION, FRAME, VALUE_BAR, SLIDER),
+  StatusBar = apiSet(SCRIPT_REGION, FRAME, VALUE_BAR, STATUS_BAR),
+  GameTooltip = apiSet(SCRIPT_REGION, FRAME, GAME_TOOLTIP),
+}
+-- CreateFrame accepts these (not Texture or FontString).
+local FRAME_TYPES = {
+  Frame = true, EventFrame = true, Button = true, ItemButton = true, CheckButton = true,
+  EditBox = true, ScrollFrame = true, Slider = true, StatusBar = true, GameTooltip = true,
+}
+
+-- A method of the kind's set that the fake does not implement: records the call.
+local stubs = {}
+local function stub(k)
+  local fn = stubs[k]
+  if not fn then
+    fn = function(self, ...)
+      self.calls[#self.calls + 1] = { k, ... }
+      return nil
     end
-    return nil
-  end,
+    stubs[k] = fn
+  end
+  return fn
+end
+
+-- One metatable per kind; its __index is a plain method table, as on the client
+-- (MapPins reads getmetatable(pin).__index for the frame's own methods).
+local KIND_MT = {}
+for kind, api in pairs(ui.API) do
+  local methods = {}
+  for k in pairs(api) do methods[k] = W[k] or stub(k) end
+  KIND_MT[kind] = { __index = methods }
+end
+
+-- Atlases confirmed on the 1.60.1 client (design spec, platform facts; the
+-- diagnostic census): GetAtlasInfo knows only these unless opts.atlases adds more.
+ui.ATLASES = {
+  "QuestNormal", "QuestTurnin", "QuestDaily", "Waypoint-MapPin-Tracked",
+  "Waypoint-MapPin-Untracked", "QuestBG-Parchment", "Campaign-QuestLog-LoreBook",
 }
 
 ---------------------------------------------------------------------------
@@ -318,11 +496,12 @@ local function newClient(opts)
   local applyTemplates -- forward
 
   local function newWidget(kind, name, parent, template)
+    local mt = assert(KIND_MT[kind], "the fake client has no widget type " .. tostring(kind))
     local w = setmetatable({
       kind = kind, name = name, parent = parent, template = template,
       shown = true, points = {}, scripts = {}, events = {}, calls = {},
       _new = newWidget,
-    }, WidgetMT)
+    }, mt)
     fake.widgets[#fake.widgets + 1] = w
     if name and env then env[name] = w end
     if template then applyTemplates(w, template) end
@@ -336,9 +515,12 @@ local function newClient(opts)
     box.retained = retain -- ScrollBoxConstants.RetainScrollPosition (true) or not
     local view = box.view or {}
     local old = box.rows or {}
+    -- the frame pool hands the previous frames back in reversed order
+    local pool = {}
+    for i = #old, 1, -1 do pool[#pool + 1] = old[i].frame end
     local rows = {}
     for i, element in ipairs(dp and dp.collection or {}) do
-      local frame = old[i] and old[i].frame
+      local frame = pool[i]
       local function acquire(tpl)
         if not frame then
           frame = newWidget("Button", nil, box, tpl or "LevelingAdvisorListRowTemplate")
@@ -359,7 +541,7 @@ local function newClient(opts)
       if view.extentCalc then extent = view.extentCalc(i, element) end
       rows[i] = { frame = acquire(), element = element, extent = extent }
     end
-    for i = #rows + 1, #old do old[i].frame:Hide() end
+    for i = #rows + 1, #pool do pool[i]:Hide() end
     box.rows = rows
   end
 
@@ -392,6 +574,11 @@ local function newClient(opts)
 
   fake.newFrame = function(kind, name, parent, template)
     return newWidget(kind or "Frame", name, parent, template)
+  end
+  local function createFrame(kind, name, parent, template)
+    kind = kind or "Frame"
+    if not FRAME_TYPES[kind] then error("CreateFrame: Unknown frame type '" .. tostring(kind) .. "'", 2) end
+    return newWidget(kind, name, parent, template)
   end
 
   function fake.named(name)
@@ -433,8 +620,9 @@ local function newClient(opts)
   end
   function fake.enter(w) run(w, "OnEnter", false) end
   function fake.leave(w) run(w, "OnLeave", false) end
+  -- Typing changes the text without SetText and reports user input.
   function fake.type(box, s)
-    box:SetText(s)
+    box.text = s
     run(box, "OnTextChanged", true)
   end
   function fake.combat(v) combat = v and true or false end
@@ -443,13 +631,14 @@ local function newClient(opts)
   local g = {}
   g.UIParent = newWidget("Frame", "UIParent")
   g.UISpecialFrames = {}
-  g.CreateFrame = function(kind, name, parent, template)
-    return newWidget(kind or "Frame", name, parent, template)
-  end
+  g.CreateFrame = createFrame
   g.InCombatLockdown = function() return combat end
+  local atlases = {}
+  for _, a in ipairs(ui.ATLASES) do atlases[a] = true end
+  for _, a in ipairs(opts.atlases or {}) do atlases[a] = true end
   g.C_Texture = {
     GetAtlasInfo = function(atlas)
-      if opts.noAtlas then return nil end
+      if opts.noAtlas or not atlases[atlas] then return nil end
       return { atlas = atlas, width = 64, height = 64 }
     end,
   }
@@ -520,14 +709,14 @@ local function newClient(opts)
     fake.cursor = { 500, 500 }
     g.GetCursorPosition = function() return fake.cursor[1], fake.cursor[2] end
   end
+  -- The pin and data provider mixins exist on every client; the world map is a
+  -- map canvas (spec/helpers/mapcanvas.lua, attached in ui.load once env exists).
+  for k, v in pairs(mapcanvas.mixins()) do g[k] = v end
   if opts.worldMap then
     local wm = newWidget("Frame", "WorldMapFrame", g.UIParent)
     wm.shown = false
-    wm.providers = {}
-    function wm:SetMapID(id) self.mapID = id end
-    function wm:GetMapID() return self.mapID end
-    function wm:AddDataProvider(p) self.providers[#self.providers + 1] = p end
     g.WorldMapFrame = wm
+    fake.worldMap = wm
   end
 
   local tip = newWidget("GameTooltip", "GameTooltip", g.UIParent)
@@ -670,6 +859,17 @@ function ui.load(opts)
   for _, k in ipairs(opts.without or {}) do env[k] = nil end
   fake.bind(env)
   env._G = env
+  if fake.worldMap then
+    mapcanvas.attach(fake.worldMap, {
+      env = env,
+      templates = { ui.pinTemplate() },
+      newFrame = function(frameType, parent, name, t)
+        local f = fake.newFrame(frameType, nil, parent, name)
+        if t.size then f.width, f.height = t.size[1], t.size[2] end
+        return f
+      end,
+    })
+  end
   env.UIParent = fake.globals.UIParent
   env.GameTooltip = fake.tooltip
   if opts.questMap then

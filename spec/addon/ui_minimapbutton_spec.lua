@@ -222,11 +222,11 @@ describe("minimap button", function()
 
   it("falls back to the plain icon when SetMask throws", function()
     local ns, env, fake, _, first = load()
-    local mt = getmetatable(first)
-    local orig = mt.__index
-    mt.__index = function(t, k)
+    local mt = getmetatable(first.laIcon) -- the Texture type: SetMask is a texture method
+    local orig = mt.__index -- the kind's method table, as on the client
+    mt.__index = function(_, k)
       if k == "SetMask" then return function() error("no masks") end end
-      return orig(t, k)
+      return orig[k]
     end
     local btn = ns.UI.MinimapButton.build()
     mt.__index = orig

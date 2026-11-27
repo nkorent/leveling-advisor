@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from pipeline.crawl import crawl_dungeons
 from pipeline.curated import load_dungeons
 from pipeline.dungeon_quests import build_quest_lists, match_dungeons, write_quests_toml
@@ -63,6 +65,17 @@ def test_dungeon_name_matching():
     assert [p["name"] for p in unmatched] == ["Barrow Deeps"]
 
 
+def test_dungeon_word_match_must_be_unambiguous():
+    """A page whose words all occur in two dungeon names (and that is no complex) stays unmatched."""
+    gen = {"UBRS": {"name": "Upper Blackrock Spire"}, "LBRS": {"name": "Lower Blackrock Spire"},
+           "BRD": {"name": "Blackrock Depths"}}
+    pages = [{"name": n, "slug": n.lower().replace(" ", "-")} for n in (
+        "Blackrock Spire", "Upper Blackrock Spire", "Blackrock Depths")]
+    m, unmatched = match_dungeons(pages, gen)
+    assert {p["name"]: keys for p, keys in m} == {"Upper Blackrock Spire": ["UBRS"], "Blackrock Depths": ["BRD"]}
+    assert [p["name"] for p in unmatched] == ["Blackrock Spire"]
+
+
 def test_dungeon_quests_merge_by_key(tmp_path):
     pages = [{"name": "Deadmines", "slug": "the-deadmines", "quest_ids": [1, 2, 3, 999]},
              {"name": "Scarlet Monastery", "slug": "scarlet-monastery", "quest_ids": [2]},
@@ -102,6 +115,7 @@ class Clock:
         self.t += s
 
 
+@pytest.mark.skipif(not ROBOTS.is_file(), reason="data/raw/outof.games/robots.txt not fetched (data/raw is not in git)")
 def test_dungeon_crawl_respects_robots_and_interval(tmp_path):
     robots = RobotsRules.parse(ROBOTS.read_text(encoding="utf-8"), agent="LevelingAdvisorDataBuilder")
     assert not robots.allowed("/api/v2/forever/quests/")

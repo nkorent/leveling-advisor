@@ -23,8 +23,25 @@ describe("Sections", function()
     assert.equals("DRUID", s[3].rows[1].tags.class)
   end)
 
-  it("dungeon quests stay out of every section", function()   -- 1275 is 85 yd away
-    assert.same({ 4730, 4763, 7003, 5061, 1010, 1007, 1100 }, H.rowIDs(build(S18)))
+  it("dungeon quests stay out of every section", function()
+    -- At S20, 1275 and 1199 (BFD) and 1486 (Wailing Caverns) are eligible and their givers
+    -- stand within Right Here range of the player, so only the dungeon rule keeps them out.
+    local S20 = H.states.S20
+    local c = Candidates.build(db, S20)
+    for _, id in ipairs({ 1275, 1199, 1486 }) do
+      local cand = H.candidateFor(c, id)
+      assert.equals("eligible", cand.status)
+      local yards = ns.Geo.distance(db, { S20.mapID, S20.x, S20.y },
+        { cand.quest.giver.mapID, cand.quest.giver.x, cand.quest.giver.y })
+      assert.is_true(yards <= ns.Tuning.RIGHT_HERE_YD, id .. " is " .. yards .. " yd away")
+    end
+    local secs = Sections.build(db, S20, c, ZoneScore.rank(db, S20, c))
+    for _, sec in ipairs(secs) do
+      for _, row in ipairs(sec.rows) do
+        assert.is_false(db:quest(row.questID).dungeonQuest, sec.key .. " lists dungeon quest " .. row.questID)
+      end
+    end
+    assert.is_truthy(find(secs, "here"))
   end)
 
   it("chains section lists started chains", function()

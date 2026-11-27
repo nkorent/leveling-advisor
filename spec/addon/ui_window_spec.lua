@@ -225,7 +225,8 @@ describe("book window", function()
 
   describe("gear", function()
     it("opens the settings, and refuses in combat", function()
-      local ns, env, fake = ui.load({ state = "S18" })
+      -- QuestLog-icon-setting is not among the atlases confirmed on 1.60.1: a client that has it
+      local ns, env, fake = ui.load({ state = "S18", atlases = { "QuestLog-icon-setting" } })
       ns.UI.open()
       local f = frameOf(fake)
       local gear = f.laGear
@@ -251,6 +252,11 @@ describe("book window", function()
       local ns, _, fake = ui.load({ state = "S18", noAtlas = true })
       ns.UI.open()
       assert.equal("Interface\\Buttons\\UI-OptionsButton", frameOf(fake).laGear.laIcon:GetTexture())
+      -- the same with only the confirmed atlases (the gear atlas is unconfirmed)
+      local ns2, _, fake2 = ui.load({ state = "S18" })
+      ns2.UI.open()
+      assert.is_nil(frameOf(fake2).laGear.laIcon:GetAtlas())
+      assert.equal("Interface\\Buttons\\UI-OptionsButton", frameOf(fake2).laGear.laIcon:GetTexture())
     end)
   end)
 

@@ -69,6 +69,9 @@ ns.Data.quests = {
   [1199] = dq("Twilight Falls", 20, 24, 1439, 38.0, 42.0, 2250),
   [6563] = dq("In Search of Thaelrid", 18, 24, 1440, 35.0, 45.0, 2000),
   [6922] = dq("Knowledge in the Deeps", 19, 23, 1432, 40.0, 40.0, 2050),
+  -- A second dungeon's quest, eligible at S18 and S20, beside the player in Darkshore: routes,
+  -- sections and dungeon picks must keep it apart from BFD (WC has one quest, never recommended).
+  [1486] = Q("Deviate Hides", ALLIANCE, 17, 21, 1439, D, 38.2, 41.5, 1800, { group = 5, dungeonKey = "WC" }),
   [7001] = filler("Human Only", 10, 18, 500, { raceMask = 1 }),
   [7002] = filler("Warrior Only", 10, 18, 500, { classMask = 1 }),
   [7003] = filler("Either Way", 10, 18, 500, { prereq = { any = { 7004, 965 } } }),
@@ -116,7 +119,9 @@ ns.Data.continents = {
 ns.Data.dungeons = {
   BFD = { name = "Blackfathom Deeps", entrance = { 1440, 14.0, 14.0 }, minLevel = 22, maxLevel = 28,
     groupSize = 5, faction = 3, live = true, quests = { 1199, 1275, 6563, 6922 } },
+  WC = { name = "Wailing Caverns", entrance = { 1440, 90.0, 60.0 }, minLevel = 17, maxLevel = 24,
+    groupSize = 5, faction = 3, live = true, quests = { 1486 } },
 }
 
 ns.Data.meta = { built = "2026-11-24", gameData = "1.60.1", sources = { "fixture" },
-  counts = { quests = 25, npcs = 3 } }
+  counts = { quests = 26, npcs = 3 } }
