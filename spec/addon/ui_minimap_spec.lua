@@ -21,7 +21,7 @@ describe("quest mini map", function()
     return ns.UI.QuestInfo.miniMap(db, q, state), q
   end
 
-  it("model: giver and turn-in merged, objective, player", function()
+  it("model: giver and turn-in merged, objective; no player position (0.3.0)", function()
     load()
     local m = model(4763)
     assert.same({ 1439, "Darkshore" }, { m.mapID, m.mapName })
@@ -29,7 +29,7 @@ describe("quest mini map", function()
       { m.points[1].kind, m.points[1].x, m.points[1].y, m.points[1].label })
     assert.same({ "objective", 52.5, 33.4, "Objective" },
       { m.points[2].kind, m.points[2].x, m.points[2].y, m.points[2].label })
-    assert.same({ x = 38.0, y = 41.0 }, m.player)
+    assert.is_nil(m.player)
     assert.same({}, m.others)
   end)
 
@@ -98,7 +98,17 @@ describe("quest mini map", function()
     assert.same({ "CENTER", mm.box, "TOPLEFT", 0.374 * 300, -0.401 * 200 },
       { g.points[1][1], g.points[1][2], g.points[1][3], g.points[1][4], g.points[1][5] })
     assert.is_true(fake.visible(g))
-    assert.is_true(fake.visible(mm.player))
+    -- the objective keeps its red dot; there is no blue player dot (0.3.0)
+    local o = markers[2]
+    assert.equal("objective", o.point.kind)
+    assert.is_true(fake.visible(o))
+    assert.is_true(o.dot:IsShown())
+    assert.same({ 0.9, 0.25, 0.15 }, { o.dot.vertex[1], o.dot.vertex[2], o.dot.vertex[3] })
+    assert.is_nil(mm.player)
+    assert.is_nil(mm.playerDot)
+    assert.same({}, fake.findAll(function(w)
+      return w.kind == "Texture" and w.vertex and w.vertex[1] == 0.35 and w.vertex[2] == 0.7 and w.vertex[3] == 1.0
+    end))
     fake.enter(g)
     assert.equal("Quest giver and turn-in: Sentinel Shaya (37.4, 40.1)", fake.tooltip.lines[1][1])
     local spy = ui.spy(ns.UI.Nav, "showPlace", function() return true end)
@@ -133,6 +143,155 @@ describe("quest mini map", function()
     ns.UI.show({ kind = "zone", mapID = 1439, questID = 4763 })
     assert.is_false(model(4763).complete)
     assert.is_true(markers[1].glyph.atlas == "QuestNormal" or markers[1].glyph.texture == "Interface\\GossipFrame\\AvailableQuestIcon")
+  end)
+
+  ---------------------------------------------------------------------------
+  -- Task 8: what each objective dot is (Contract A field 26, field 13 index).
+  ---------------------------------------------------------------------------
+  local WOLF = { 3, 750, "Tough Wolf Meat", 8, { "Young Wolf", "Timber Wolf", "Ragged Wolf" }, 1, true }
+  local LIGHT, GREY = 0.8, 0.62
+
+  -- Quest 4763's objectives and points replaced (its giver and turn-in stay at 37.4, 40.1).
+  local function objectives(points, list, text)
+    return function(d)
+      local r = d.quests[4763]
+      r[13], r[26] = points, list
+      if text then r[14] = text end
+    end
+  end
+
+  local function objectiveMarkers()
+    ns.UI.open()
+    ns.UI.show({ kind = "zone", mapID = 1439, questID = 4763 })
+    local out = {}
+    for _, m in ipairs(ns.UI.RouteView.detail.parts.map.markers) do
+      if m:IsShown() and m.point.kind == "objective" then out[#out + 1] = m end
+    end
+    return out
+  end
+
+  local function tip(marker)
+    fake.enter(marker)
+    local out = {}
+    for i, l in ipairs(fake.tooltip.lines) do out[i] = { l[1], l[2], l[3], l[4] } end
+    return out
+  end
+
+  it("model: an objective point carries its objective; dots of one objective sort together", function()
+    load({ patch = objectives({ { 1439, 50, 30, 2 }, { 1439, 51, 31 }, { 1439, 52, 32, 1 }, { 1439, 53, 33, 2 } },
+      { { 1, 6, "Kobold Vermin", 10 }, WOLF }) })
+    local m = model(4763)
+    local objs = {}
+    for _, p in ipairs(m.points) do
+      if p.kind == "objective" then objs[#objs + 1] = { p.x, p.objective and p.objective.index or false, p.label } end
+    end
+    assert.same({ { 52, 1, "Kobold Vermin" }, { 50, 2, "Tough Wolf Meat" }, { 53, 2, "Tough Wolf Meat" },
+      { 51, false, "Objective" } }, objs)
+    assert.same({ 4763, "Objective of The Blackwood Corrupted" }, { m.questID, m.objectiveText })
+  end)
+
+  it("tooltip: an item with its count and where it drops", function()
+    load({ patch = objectives({ { 1439, 45.2, 35.2, 1 } }, { WOLF }) })
+    local markers = objectiveMarkers()
+    assert.equal(1, #markers)
+    assert.is_true(markers[1].dot:IsShown())          -- still the red disc
+    assert.same({
+      { "Tough Wolf Meat", 1, 1, 1 },
+      { "Item · 8 needed", LIGHT, LIGHT, LIGHT },
+      { "Drops from: Young Wolf, Timber Wolf, Ragged Wolf, …", LIGHT, LIGHT, LIGHT },
+      { "45.2, 35.2 · Click: set waypoint", GREY, GREY, GREY },
+    }, tip(markers[1]))
+    assert.is_true(fake.tooltip.shown)
+    assert.same({}, env.errors)
+  end)
+
+  it("tooltip: a kill, a talk-to, an object, an item found in objects, an event", function()
+    load({ patch = objectives({ { 1439, 10, 10, 1 }, { 1439, 20, 20, 2 }, { 1439, 30, 30, 3 }, { 1439, 40, 40, 4 },
+      { 1439, 50, 50, 5 } }, {
+        { 1, 6, "Kobold Vermin", 10 }, { 1, 9, "Captain Placeholder" }, { 2, 52, "Old Crate" },
+        { 3, 3910, "Snuff", nil, { "Battered Chest" }, 2 }, { 4, nil, "Peons Awoken", 12 },
+      }, "Kill 10 Kobold Vermin, then speak with Captain Placeholder.") })
+    local m = objectiveMarkers()
+    local function line2(i) return tip(m[i])[2][1] end
+    assert.equal("Kill · 10 needed", line2(1))
+    assert.equal("Talk to", line2(2))
+    assert.equal("Object · use or collect", line2(3))
+    assert.equal("Item", line2(4))
+    assert.equal("Found in: Battered Chest", tip(m[4])[3][1])
+    assert.equal("Objective · 12 needed", line2(5))
+    assert.equal(3, #tip(m[1]))                         -- name, kind, coordinates: no source line
+  end)
+
+  it("tooltip: an npc objective is Kill (not Talk to) when the text does not say speak or talk", function()
+    load({ patch = objectives({ { 1439, 10, 10, 1 } }, { { 1, 9, "Captain Placeholder" } }, "Defeat the captain.") })
+    assert.equal("Kill", tip(objectiveMarkers()[1])[2][1])
+  end)
+
+  it("tooltip: a point of an unknown objective", function()
+    load({ patch = objectives({ { 1439, 45.2, 35.2 } }, { WOLF }) })
+    assert.same({ { "Objective", 1, 1, 1 }, { "45.2, 35.2 · Click: set waypoint", GREY, GREY, GREY } },
+      tip(objectiveMarkers()[1]))
+    -- the old data shape (no field 26) reads the same
+    load({ patch = objectives({ { 1439, 45.2, 35.2 } }, nil) })
+    assert.same({ { "Objective", 1, 1, 1 }, { "45.2, 35.2 · Click: set waypoint", GREY, GREY, GREY } },
+      tip(objectiveMarkers()[1]))
+  end)
+
+  it("tooltip: several dots of one objective say the same thing", function()
+    load({ patch = objectives({ { 1439, 10, 10, 1 }, { 1439, 20, 20, 1 } }, { WOLF }) })
+    local m = objectiveMarkers()
+    local a, b = tip(m[1]), tip(m[2])
+    a[#a], b[#b] = nil, nil                             -- only the coordinates differ
+    assert.same(a, b)
+  end)
+
+  it("tooltip: live progress from the quest log wins over the static count", function()
+    load({ patch = objectives({ { 1439, 45.2, 35.2, 1 } }, { WOLF }) })
+    local m = objectiveMarkers()
+    fake.setLog(4763, { objectives = {
+      { text = "Peacebloom: 0/1", type = "item", finished = false, numFulfilled = 0, numRequired = 1 },
+      { text = "Tough Wolf Meat: 3/10", type = "item", finished = false, numFulfilled = 3, numRequired = 10 },
+    } })
+    local lines = tip(m[1])
+    assert.equal("Item · 10 needed", lines[2][1])
+    assert.same({ "Progress: 3/10", 1, 1, 1 }, lines[4])
+    fake.setLog(4763, { objectives = {
+      { text = "Tough Wolf Meat: 10/10", type = "item", finished = true, numFulfilled = 10, numRequired = 10 },
+    } })
+    assert.same({ "Progress: 10/10", 0.1, 1, 0.1 }, tip(m[1])[4])
+    -- no counts in the entry: read from its text, in either format the client uses
+    fake.setLog(4763, { objectives = { { text = "Tough Wolf Meat: 4/8", type = "item", finished = false } } })
+    assert.same({ "Progress: 4/8", 1, 1, 1 }, tip(m[1])[4])
+    fake.setLog(4763, { objectives = { { text = "5/8 Tough Wolf Meat", type = "item", finished = false } } })
+    assert.same({ "Progress: 5/8", 1, 1, 1 }, tip(m[1])[4])
+    assert.same({}, env.errors)
+  end)
+
+  it("tooltip: no progress line when the quest is not in the log or the API fails", function()
+    load({ patch = objectives({ { 1439, 45.2, 35.2, 1 } }, { WOLF }) })
+    local m = objectiveMarkers()
+    fake.setLog(1, { objectives = {} })                  -- the log has another quest only
+    env.C_QuestLog.GetQuestObjectives = function()
+      return { { text = "Tough Wolf Meat: 3/8", type = "item", numFulfilled = 3, numRequired = 8 } }
+    end
+    assert.equal(4, #tip(m[1]))
+    fake.setLog(4763, {})
+    env.C_QuestLog.GetQuestObjectives = function() error("boom") end
+    local lines = tip(m[1])
+    assert.equal(4, #lines)
+    assert.equal("Item · 8 needed", lines[2][1])
+    assert.same({}, env.errors)
+  end)
+
+  it("the giver shield tooltip is unchanged", function()
+    load({ patch = objectives({ { 1439, 45.2, 35.2, 1 } }, { WOLF }) })
+    ns.UI.open()
+    ns.UI.show({ kind = "zone", mapID = 1439, questID = 4763 })
+    local g = ns.UI.RouteView.detail.parts.map.markers[1]
+    assert.equal("giver", g.point.kind)
+    fake.enter(g)
+    assert.same({ "Quest giver and turn-in: Sentinel Shaya (37.4, 40.1)" }, { fake.tooltip.lines[1][1] })
+    assert.equal(1, #fake.tooltip.lines)
   end)
 
   it("README lists the book, the bookmark and the new commands", function()

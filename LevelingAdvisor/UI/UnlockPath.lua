@@ -154,7 +154,7 @@ local function setDot(d, look, glyph)
   d.check:SetShown(glyph == nil)
   d.glyph:SetShown(glyph ~= nil)
   d.glyph:SetText(glyph or "")
-  if l.ink then d.glyph:SetTextColor(l.ink[1], l.ink[2], l.ink[3]) end
+  if l.ink then Style.setTextColor(d.glyph, l.ink[1], l.ink[2], l.ink[3]) end
 end
 
 local function newRow(s)
@@ -195,7 +195,7 @@ end
 local function setLevel(r, level, color)
   local c = Style.DIFFICULTY[color] or Style.DIFFICULTY.yellow
   r.level:SetText(level and tostring(level) or "?")
-  r.level:SetTextColor(c[1], c[2], c[3])
+  Style.setTextColor(r.level, c[1], c[2], c[3])
 end
 
 -- A row that opens questID's page; nil: a row that does not react.
@@ -367,8 +367,8 @@ local function newFold(s)
   b:SetText("Show all")
   b:SetSize(math.max(fs:GetStringWidth() or 0, 40), 16)
   b:SetPoint("LEFT", f.text, "RIGHT", 6, 0)
-  b:SetScript("OnEnter", function() fs:SetTextColor(Style.INK[1], Style.INK[2], Style.INK[3]) end)
-  b:SetScript("OnLeave", function() fs:SetTextColor(LINK[1], LINK[2], LINK[3]) end)
+  b:SetScript("OnEnter", function() Style.setTextColor(fs, Style.INK[1], Style.INK[2], Style.INK[3]) end)
+  b:SetScript("OnLeave", function() Style.setTextColor(fs, LINK[1], LINK[2], LINK[3]) end)
   s.fold, s.showAll = f, b
 end
 

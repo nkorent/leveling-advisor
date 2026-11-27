@@ -88,6 +88,56 @@ end
     assert.is_true(missing < total * 0.05, "unresolved prerequisites: " .. missing .. " of " .. total)
   end)
 
+  -- Task 8: what each objective dot is, and required item counts from the objective text
+  it("quest 33 (Wolves Across the Border): Tough Wolf Meat x8, its points carry that objective", function()
+    local q = db:quest(33)
+    assert.equals(1, #q.objectives)
+    local o = q.objectives[1]
+    assert.same({ 3, 750, "Tough Wolf Meat", 8 }, { o.kind, o.id, o.name, o.count })
+    assert.same({ "Timber Wolf", "Young Wolf", "Ragged Timber Wolf" }, o.from)
+    assert.same({ 1, true }, { o.fromKind, o.fromMore })
+    assert.equals(2, #q.points)
+    for _, p in ipairs(q.points) do assert.equals(o, p.objective) end
+    assert.same({ { 750, 8 } }, q.items.required)
+  end)
+
+  it("quest 587 (Up to Snuff) needs 15 Snuff, quest 1275 eight brain stems", function()
+    local q = db:quest(587)
+    assert.same({ { 3910, 15 } }, q.items.required)
+    assert.same({ 3, 3910, "Snuff", 15 }, { q.objectives[1].kind, q.objectives[1].id, q.objectives[1].name,
+      q.objectives[1].count })
+    assert.equals(q.objectives[1], q.points[1].objective)
+    local b = db:quest(1275)
+    assert.same({ "Corrupted Brain Stem", 8 }, { b.objectives[1].name, b.objectives[1].count })
+    assert.same({ { 5952, 8 } }, b.items.required)
+  end)
+
+  it("objective data is consistent: indices in range, no made-up required count of 1", function()
+    local quests, withObjectives, points, indexed = 0, 0, 0, 0
+    for _, id in ipairs(db:questIDs()) do
+      local q = db:quest(id)
+      local r = ns.Data.quests[id]
+      quests = quests + 1
+      if #q.objectives > 0 then withObjectives = withObjectives + 1 end
+      for i, p in ipairs(q.points) do
+        points = points + 1
+        local raw = r[13][i][4]
+        if raw then
+          indexed = indexed + 1
+          assert.is_truthy(q.objectives[raw], "quest " .. id .. " point " .. i)
+        end
+      end
+      for _, o in ipairs(q.objectives) do
+        assert.is_truthy(o.kind >= 1 and o.kind <= 4, "quest " .. id)
+        assert.is_true(o.count == nil or (o.count >= 1 and o.count % 1 == 0), "quest " .. id)
+        assert.is_true(o.from == nil or (#o.from >= 1 and #o.from <= 3), "quest " .. id)
+      end
+    end
+    print(("objectives: %d of %d quests; %d of %d points indexed"):format(withObjectives, quests, indexed, points))
+    assert.is_true(withObjectives > 2000)
+    assert.is_true(indexed > points * 0.95)
+  end)
+
   it("covers both factions, every grid race and levels 1 to 58", function()
     assert.equals(72, #chars)
   end)
@@ -180,6 +230,96 @@ end
     assert.is_true(pickups > 100, "pickups: " .. pickups)
     assert.is_true(dungeonPickups > 0, "dungeon pickups: " .. dungeonPickups)
   end)
+
+  -- Level fit (0.3.0): only yellow and green quests are recommended. The characters here have
+  -- empty logs, so no row is a turn-in (a complete quest stays in Turn In at any colour).
+  local RECOMMENDED = { turnin = true, here = true, class = true, chains = true, next = true }
+  local FITS = { yellow = true, green = true }
+
+  local function fitOf(s, id)
+    local q = quest(id)
+    return ns.Difficulty.color(q.level, s.level, s.greyAtOrBelow)
+  end
+
+  -- Counts and checks the recommended rows, the route steps and the dungeon pickups of one run.
+  local function checkFit(s, rec, steps, what)
+    local n = { rows = 0, actions = 0, pickups = 0, later = 0 }
+    for _, sec in ipairs(rec.sections) do
+      for _, row in ipairs(sec.rows) do
+        local fit = fitOf(s, row.questID)
+        if RECOMMENDED[sec.key] then
+          n.rows = n.rows + 1
+          assert.is_true(FITS[fit], what .. ": " .. sec.key .. " row " .. row.questID .. " is " .. fit)
+          assert.is_nil(row.later, what .. ": " .. sec.key .. " row " .. row.questID)
+        else
+          assert.equals("later", sec.key, what)
+          n.later = n.later + 1
+          assert.is_true(row.later, what .. ": later row " .. row.questID)
+          assert.is_true(row.soon or fit == "orange", what .. ": later row " .. row.questID .. " is " .. fit)
+          assert.equals(math.max(quest(row.questID).level - 2, quest(row.questID).requiredLevel), row.goodAt, what)
+        end
+      end
+    end
+    for i, step in ipairs(steps) do
+      for _, a in ipairs(step.actions) do
+        n.actions = n.actions + 1
+        local fit = fitOf(s, a[1])
+        assert.is_true(FITS[fit], what .. ": route step " .. i .. " " .. a[2] .. " " .. a[1] .. " is " .. fit)
+      end
+    end
+    for _, p in ipairs(rec.dungeon and rec.dungeon.pickups or {}) do
+      n.pickups = n.pickups + 1
+      local fit = fitOf(s, p.questID)
+      assert.is_true(FITS[fit], what .. ": dungeon pickup " .. p.questID .. " is " .. fit)
+    end
+    return n
+  end
+
+  it("Booty Bay: a level-38 Horde warrior is recommended no orange, red or grey quest", function()
+    local s = {
+      faction = "Horde", raceMask = 2, classFile = "WARRIOR", classMask = 1,
+      level = 38, mapID = 1434, x = 27, y = 77,
+      completed = {}, log = {}, ignored = {}, recordedXP = {},
+      settings = { elite = true, dungeons = true },
+    }
+    local rec = ns.Engine.compute(db, s)
+    local steps = ns.Engine.route(db, s, 1434, rec)
+    local n = checkFit(s, rec, steps, "Booty Bay")
+    assert.is_true(n.rows > 0 and n.actions > 0, "rows " .. n.rows .. ", route actions " .. n.actions)
+    -- the first step is not a level-41+ quest (the owner was sent to level-43 quests here)
+    for _, a in ipairs(steps[1].actions) do
+      assert.is_true(quest(a[1]).level <= 40, "first step: " .. a[1] .. " is level " .. quest(a[1]).level)
+    end
+    -- the orange quests of Booty Bay wait in Later (606 Scaring Shaky, level 41)
+    assert.is_true(n.later > 0)
+    local laterIDs = {}
+    for _, sec in ipairs(rec.sections) do
+      if sec.key == "later" then
+        for _, row in ipairs(sec.rows) do laterIDs[row.questID] = row end
+      end
+    end
+    assert.equals("Later — too high for now", rec.sections[#rec.sections].title)
+    assert.equals(39, laterIDs[606] and laterIDs[606].goodAt)
+  end)
+
+  it("level fit on the grid: no recommended row, top-zone route step or dungeon pickup is orange, red or grey",
+    function()
+      local total = { rows = 0, actions = 0, pickups = 0, later = 0 }
+      for _, r in ipairs(runs) do
+        local top = r.rec.zones[1]
+        local steps = top and ns.Engine.route(db, r.state, top.mapID, r.rec) or {}
+        local n = checkFit(r.state, r.rec, steps, label(r.state))
+        for k, v in pairs(n) do total[k] = total[k] + v end
+        -- the steps of the player's own map too (computed in setup)
+        checkFit(r.state, r.rec, r.steps, label(r.state) .. " (own map)")
+      end
+      print(("level fit: %d rows, %d route actions, %d dungeon pickups, %d later rows"):format(
+        total.rows, total.actions, total.pickups, total.later))
+      assert.is_true(total.rows > 100, "rows: " .. total.rows)
+      assert.is_true(total.actions > 1000, "route actions: " .. total.actions)
+      assert.is_true(total.pickups > 0, "dungeon pickups: " .. total.pickups)
+      assert.is_true(total.later > 100, "later rows: " .. total.later)
+    end)
 
   -- Unlock paths (Engine/Unlock.lua) on the shipped data.
   local function player(faction, raceMask, classFile, classMask, level, completed)

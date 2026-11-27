@@ -27,6 +27,8 @@ FACTION = {"Alliance": 1, "Horde": 2, "Both": 3}
 ZONE_FACTION = {"Alliance": 1, "Horde": 2, "Both": 3, "Contested": 3}
 LINK_FACTION = {"Alliance": 1, "Horde": 2}
 KIND = {"npc": 1, "object": 2, "item": 3}
+OBJECTIVE_KIND = {"npc": 1, "object": 2, "item": 3, "other": 4}     # Contract A field 26
+SOURCE_KIND = {"npc": 1, "object": 2}                               # field 26 fromKind
 SOURCE = {"game": 1, "estimate": 2, "recorder": 3}
 # Contract A field 18 has no QuestieDB code: QuestieDB XP (Classic tables plus trace-observed game
 # values) is game data, as Questie-filled levels already are; the merge provenance keeps "questiedb".
@@ -122,6 +124,18 @@ def _point(p: dict) -> list:
     return [p.get("map_id"), _coord(p.get("x")), _coord(p.get("y"))]
 
 
+def _objective_point(p: dict) -> list:
+    """{map_id, x, y, objective} -> {mapID, x, y, objectiveIndex} (field 13; index nil when unmatched)."""
+    return [*_point(p), p.get("objective")]
+
+
+def _objective(ob: dict) -> list:
+    """Merged objective -> {kind, id, name, count, from, fromKind, fromMore} (field 26)."""
+    return [_enum(OBJECTIVE_KIND, ob.get("kind"), "objective kind"), ob.get("id"), ob.get("name"), ob.get("count"),
+            list(ob.get("from") or []) or None, _enum(SOURCE_KIND, ob.get("from_kind"), "objective source kind"),
+            True if ob.get("from_more") else None]
+
+
 def _pairs(entries, a: str, b: str) -> list | None:
     out = [[e[a], e[b]] for e in entries or []]
     return out or None
@@ -156,7 +170,7 @@ def encode_quest(q: dict) -> list:
         q.get("group_size"),                                             # 10
         _place(q.get("giver")),                                          # 11
         _place(q.get("turn_in")),                                        # 12
-        [_point(p) for p in q.get("objective_points") or []] or None,    # 13
+        [_objective_point(p) for p in q.get("objective_points") or []] or None,  # 13
         q.get("objective_text"),                                         # 14
         _named(provided=list(items.get("provided") or []),               # 15
                required=_pairs(items.get("required"), "item_id", "count")),
@@ -174,6 +188,7 @@ def encode_quest(q: dict) -> list:
         q.get("dungeon_key"),                                            # 23
         q.get("required_max_level"),                                     # 24 (Contract A addition)
         list(q.get("unavailable_after") or []) or None,                  # 25 (Contract A addition)
+        [_objective(ob) for ob in q.get("objectives") or []] or None,    # 26 (Contract A addition)
     ]
 
 
@@ -286,7 +301,7 @@ def _block_file(path: Path, var: str, entries: list[tuple], extra: tuple | None 
 
 
 def emit_quests(quests: dict[int, dict], path: Path, stubs: dict[int, dict] | None = None) -> None:
-    """Data/Quests.lua: ns.Data.quests = { [questID] = { positional fields 1-25 } } and
+    """Data/Quests.lua: ns.Data.quests = { [questID] = { positional fields 1-26 } } and
     ns.Data.questStubs = { [questID] = { positional fields 1-9 } } (always present, maybe empty)."""
     _block_file(path, "quests", [(int(qid), encode_quest(quests[qid])) for qid in sorted(quests)],
                 extra=("questStubs", [(int(qid), encode_stub(stubs[qid])) for qid in sorted(stubs or {})]))

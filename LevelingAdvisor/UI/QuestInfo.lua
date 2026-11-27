@@ -1,7 +1,7 @@
 local _, ns = ...; ns.UI = ns.UI or {}; ns.UI.QuestInfo = ns.UI.QuestInfo or {}
 local QuestInfo = ns.UI.QuestInfo
 local Style = ns.UI.Style
-local method = ns.Util.method
+local call, method = ns.Util.call, ns.Util.method
 
 -- Pure helpers shared by the book's quest rows, detail page and search.
 
@@ -54,6 +54,10 @@ end
 
 -- "Turn in: Marine Tidehunter · 134 yd · ~880 XP"
 function QuestInfo.subLine(db, row, state)
+  if row.later and row.goodAt then
+    if row.state == "progress" then return "In your log — better at level " .. row.goodAt end
+    return "Good at level " .. row.goodAt
+  end
   local place, isTurnIn
   if row.state == "complete" then
     place, isTurnIn = QuestInfo.place(db, method(db, "quest", row.questID), "complete")
@@ -360,6 +364,10 @@ function QuestInfo.why(db, q, state, source)
   local status, text = QuestInfo.availability(db, q, state)
   if status ~= "available" and status ~= "soon" and status ~= "progress" then return text end
   local section = source.section
+  if section == "later" then
+    local good = source.goodAt or ns.Difficulty.goodAt(q)
+    return "Too high for now — good at level " .. good .. "."
+  end
   if section == "here" then
     if source.yards then
       return "Its quest giver is " .. math.floor(source.yards + 0.5) .. " yd from you."
@@ -477,8 +485,10 @@ local function labelFor(db, prefix, place)
   return who and (prefix .. ": " .. who) or prefix
 end
 
--- Pure. Returns { mapID, mapName, player, points, others, complete } or nil
--- when no point of the quest has coordinates.
+-- Pure. Returns { mapID, mapName, points, others, complete, questID, objectiveText }
+-- or nil when no point of the quest has coordinates. An objective point carries its
+-- objective (Contract A field 26, DB-decoded) and is labelled with its name. No
+-- player position: 0.3.0 dropped the player dot.
 function QuestInfo.miniMap(db, q, state)
   if type(q) ~= "table" then return nil end
   local cand = {}
@@ -521,11 +531,14 @@ function QuestInfo.miniMap(db, q, state)
       label = labelFor(db, "Turn in", turnin) } end
   end
   local others, otherIdx = {}, {}
+  local objectivePoints = {}
   for _, c in ipairs(cand) do
     local p = c.place
     if p.mapID == mapID then
       if c.kind == "objective" then
-        points[#points + 1] = { kind = "objective", x = p.x, y = p.y, label = "Objective" }
+        local o = type(p.objective) == "table" and p.objective or nil
+        objectivePoints[#objectivePoints + 1] = { kind = "objective", x = p.x, y = p.y,
+          label = o and o.name or "Objective", objective = o, order = #objectivePoints + 1 }
       end
     else
       local o = otherIdx[p.mapID]
@@ -538,11 +551,128 @@ function QuestInfo.miniMap(db, q, state)
     end
   end
 
-  local mm = { mapID = mapID, mapName = QuestInfo.zoneName(db, mapID) or "Map", points = points, others = others }
+  -- the dots of one objective together, in objective order (unknown ones last); stable
+  table.sort(objectivePoints, function(a, b)
+    local ia = a.objective and a.objective.index or math.huge
+    local ib = b.objective and b.objective.index or math.huge
+    if ia ~= ib then return ia < ib end
+    return a.order < b.order
+  end)
+  for _, p in ipairs(objectivePoints) do
+    p.order = nil
+    points[#points + 1] = p
+  end
+
+  local mm = { mapID = mapID, mapName = QuestInfo.zoneName(db, mapID) or "Map", points = points, others = others,
+    questID = q.id, objectiveText = q.objectiveText }
   local _, complete = QuestInfo.place(db, q, state)
   mm.complete = complete and true or false
-  if type(state) == "table" and state.mapID == mapID and type(state.x) == "number" and type(state.y) == "number" then
-    mm.player = { x = state.x, y = state.y }
-  end
   return mm
+end
+
+---------------------------------------------------------------------------
+-- Objectives (Contract A field 26): live progress and the mini map tooltip.
+---------------------------------------------------------------------------
+local LIGHT = { 0.8, 0.8, 0.8 }
+local GREY = { 0.62, 0.62, 0.62 }
+local DONE = { 0.1, 1, 0.1 }
+local KIND_WORDS = { [1] = "Kill", [2] = "Object · use or collect", [3] = "Item", [4] = "Objective" }
+
+-- C_QuestLog.GetQuestObjectives(questID) for a quest in the player's log, else nil.
+-- Fail-soft: a missing or failing API reads as no live data.
+function QuestInfo.liveObjectives(questID)
+  local log = type(C_QuestLog) == "table" and C_QuestLog or nil
+  if not (log and questID) or not call(log.GetLogIndexForQuestID, questID) then return nil end
+  local list = call(log.GetQuestObjectives, questID)
+  return type(list) == "table" and list or nil
+end
+
+-- A live objective's text is "Name: 3/8" or, count first, "3/8 Name" (kills: "... slain").
+local SUFFIX, PREFIX = ":?%s*(%d+)%s*/%s*(%d+)%s*$", "^%s*(%d+)%s*/%s*(%d+)%s*"
+
+local function counts(entry)
+  local have, need = tonumber(entry.numFulfilled), tonumber(entry.numRequired)
+  if not (have and need) and type(entry.text) == "string" then
+    local h, n = entry.text:match(SUFFIX)
+    if not h then h, n = entry.text:match(PREFIX) end
+    have, need = have or tonumber(h), need or tonumber(n)
+  end
+  return have, need
+end
+
+local function liveLabel(text)
+  return (text:gsub(SUFFIX, ""):gsub(PREFIX, ""):lower())
+end
+
+-- The live entry of the objective called `name` (its text holds the name; "Name: 3/8",
+-- "3/8 Name", "Name slain: 3/8"), with type `wantType` when given. An exact label wins;
+-- several partial matches are ambiguous (nil). Returns { have, need, done } or nil.
+function QuestInfo.liveProgress(list, name, wantType)
+  if type(list) ~= "table" or type(name) ~= "string" or name == "" then return nil end
+  local key = name:lower()
+  local exact, partial = nil, {}
+  for _, e in ipairs(list) do
+    if type(e) == "table" and type(e.text) == "string" and (not wantType or e.type == wantType) then
+      local label = liveLabel(e.text)
+      if label == key or label == key .. " slain" then
+        exact = exact or e
+      elseif label:find(key, 1, true) then
+        partial[#partial + 1] = e
+      end
+    end
+  end
+  local e = exact or (#partial == 1 and partial[1]) or nil
+  if not e then return nil end
+  local have, need = counts(e)
+  if not need then return nil end
+  have = have or 0
+  return { have = have, need = need, done = e.finished == true or have >= need }
+end
+
+local function says(text, ...)
+  if type(text) ~= "string" then return false end
+  local low = text:lower()
+  for _, word in ipairs({ ... }) do
+    if low:find("%f[%a]" .. word .. "%f[%A]") then return true end
+  end
+  return false
+end
+
+-- "Item · 8 needed", "Kill · 10 needed", "Talk to", "Object · use or collect", "Objective".
+function QuestInfo.objectiveKind(o, need, objectiveText)
+  if o.kind == 1 and o.count == nil and says(objectiveText, "speak", "talk") then return "Talk to" end
+  local text = KIND_WORDS[o.kind] or "Objective"
+  if need then text = text .. " · " .. need .. " needed" end
+  return text
+end
+
+-- "Drops from: Young Wolf, Timber Wolf, …" / "Found in: Old Crate", or nil.
+function QuestInfo.objectiveSources(o)
+  if type(o.from) ~= "table" or #o.from == 0 then return nil end
+  local names = {}
+  for i = 1, math.min(#o.from, 3) do names[i] = tostring(o.from[i]) end
+  if o.fromMore or #o.from > 3 then names[#names + 1] = "…" end
+  return (o.fromKind == 2 and "Found in: " or "Drops from: ") .. table.concat(names, ", ")
+end
+
+-- Tooltip lines { {text, r, g, b}, ... } of an objective dot. `point` is a mini map
+-- model point, `model` the mini map model (its objectiveText), `live` the quest's
+-- live objectives (QuestInfo.liveObjectives) or nil. Live counts win over the data.
+function QuestInfo.objectiveTooltip(point, model, live)
+  local o = type(point.objective) == "table" and point.objective or nil
+  local lines = { { (o and o.name) or "Objective", 1, 1, 1 } }
+  if o then
+    local progress = QuestInfo.liveProgress(live, o.name)
+    lines[#lines + 1] = { QuestInfo.objectiveKind(o, (progress and progress.need) or o.count,
+      model and model.objectiveText), LIGHT[1], LIGHT[2], LIGHT[3] }
+    local sources = QuestInfo.objectiveSources(o)
+    if sources then lines[#lines + 1] = { sources, LIGHT[1], LIGHT[2], LIGHT[3] } end
+    if progress then
+      local c = progress.done and DONE or { 1, 1, 1 }
+      lines[#lines + 1] = { "Progress: " .. progress.have .. "/" .. progress.need, c[1], c[2], c[3] }
+    end
+  end
+  lines[#lines + 1] = { string.format("%.1f, %.1f", tonumber(point.x) or 0, tonumber(point.y) or 0)
+    .. " · Click: set waypoint", GREY[1], GREY[2], GREY[3] }
+  return lines
 end

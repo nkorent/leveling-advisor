@@ -1,0 +1,363 @@
+local _, ns = ...; ns.UI = ns.UI or {}; ns.UI.Guide = ns.UI.Guide or {}
+
+-- The guide (0.3.0): keeps the game's user waypoint on the next step of the top
+-- recommended zone's route. The route is the book's own (Advisor.plan +
+-- UI.Model.route), so the book and the guide always agree.
+--   * On each advisor result it sets the waypoint (MapPins.setWaypoint, quiet)
+--     when the target changes; in combat it waits for PLAYER_REGEN_ENABLED.
+--   * It never fights the player: when they remove its waypoint or another one
+--     is set (their own, or Show on Map), it pauses until continue() and says so
+--     once in chat. A waypoint the game clears because the player arrived at it
+--     is not a removal.
+--   * Off removes its own waypoint and gives the game's waypoint pin back
+--     (MapPins.releaseOurs); a pause keeps the current waypoint as it is.
+--   * While it runs it asks the advisor for a result (which the book only
+--     computes while it is open) when the target's quest action is done, on a
+--     level up and at login, so it moves on with the book closed.
+-- On/off is the per-character setting "guide" (Core/Settings.lua keeps it in
+-- LevelingAdvisorCharDB.settings). The pause and the guide's last waypoint live
+-- in LevelingAdvisorCharDB.guideState, made on the first write.
+-- Every client API is optional: a missing one never errors.
+local Guide = ns.UI.Guide
+local call, method = ns.Util.call, ns.Util.method
+
+Guide.ARRIVAL_YARDS = 40 -- a waypoint cleared this close to the player was reached
+Guide.MAX_ASKS = 2 -- results asked for one target, so a disagreement never loops
+
+local WHAT = { pickup = "pick up", objective = "objectives", turnin = "turn in" }
+
+local listeners = {}
+local lastKey -- the target set last (per session: a reload sets the target again)
+local current -- the target of the last result (QUEST_LOG_UPDATE checks it)
+local asked = 0 -- results asked for that target
+local pending, pendingForce = false, false -- an update waiting for the end of combat
+local failed = false -- the last set did not take (shown by /advisor debug)
+
+local function inCombat()
+  return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
+end
+
+local function notify(reason)
+  for i = 1, #listeners do
+    local ok, err = pcall(listeners[i], reason)
+    if not ok then geterrorhandler()(err) end
+  end
+end
+
+-- fn(reason): reason is "enabled" (on or off), "paused" (paused or resumed) or
+-- "target" (a new waypoint was set).
+function Guide.onChange(fn)
+  listeners[#listeners + 1] = fn
+end
+
+-- LevelingAdvisorCharDB.guideState = { paused, why, spot }, or nil.
+local function saved(create)
+  local c = ns.chardb
+  if type(c) ~= "table" then return nil end
+  if type(c.guideState) ~= "table" then
+    if not create then return nil end
+    c.guideState = {}
+  end
+  return c.guideState
+end
+
+function Guide.enabled() return ns.Settings.get("guide") == true end
+
+function Guide.paused()
+  local s = saved(false)
+  return s ~= nil and s.paused == true
+end
+
+local function active() return Guide.enabled() and not Guide.paused() end
+
+-- The waypoint the guide set last ({ mapID, x, y }, 0-100), kept across reloads.
+local function spot()
+  local s = saved(false)
+  return s and s.spot or nil
+end
+
+local function setSpot(p)
+  local s = saved(p ~= nil)
+  if s then s.spot = p and { mapID = p.mapID, x = p.x, y = p.y } or nil end
+end
+
+-- why: "removed" or "replaced". A new pause says so in chat once (a pause kept
+-- from an earlier session does not).
+local function setPaused(on, why)
+  local s = saved(on)
+  if not s or (s.paused == true) == on then return end
+  s.paused = on or nil
+  s.why = on and why or nil
+  if on then
+    pending, pendingForce = false, false
+    setSpot(nil)
+    ns.Util.say("guide paused — use Continue with waypoint to resume.")
+  end
+  notify("paused")
+end
+
+---------------------------------------------------------------------------
+-- The target.
+---------------------------------------------------------------------------
+local function hasPoint(p)
+  return type(p) == "table" and p.mapID ~= nil and type(p.x) == "number" and type(p.y) == "number"
+end
+
+-- The first action of a plan step that is neither done nor ruled out.
+local function firstOpen(step, state, db)
+  local A = ns.Advisor
+  local actions = type(step) == "table" and step.actions or {}
+  for _, a in ipairs(actions) do
+    if not A.actionDone(a[1], a[2], state) and not A.questDropped(db, a[1], state) then
+      return a[1], a[2]
+    end
+  end
+  if actions[1] then return actions[1][1], actions[1][2] end
+end
+
+local function findTarget()
+  local A = ns.Advisor
+  local last = A and A.last
+  local zones = last and type(last.rec) == "table" and last.rec.zones
+  local top = type(zones) == "table" and zones[1]
+  if not (type(top) == "table" and top.mapID ~= nil) then return nil end
+  local plan = A.plan(top.mapID)
+  local route = ns.UI.Model.route(plan, last.state, A.db)
+  local i = route and route.current
+  local step = i and route.steps[i]
+  if not (step and hasPoint(step.place)) then return nil end
+  local questID, kind = firstOpen(plan.steps[i], last.state, A.db)
+  local label
+  for _, q in ipairs(step.quests or {}) do
+    if q.questID == questID then label = q.name end
+  end
+  return { mapID = step.place.mapID, x = step.place.x, y = step.place.y,
+    questID = questID, kind = kind, label = label or step.title }
+end
+
+-- The next step of the top zone's route: { mapID, x, y, questID, kind, label }
+-- (kind "pickup" | "objective" | "turnin"), or nil when there is none.
+function Guide.target()
+  local ok, t = pcall(findTarget)
+  if not ok then
+    geterrorhandler()(t)
+    return nil
+  end
+  return t
+end
+
+local function keyOf(t)
+  if not t then return nil end
+  return string.format("%s|%.1f|%.1f|%s|%s", tostring(t.mapID), t.x, t.y, tostring(t.questID), tostring(t.kind))
+end
+
+---------------------------------------------------------------------------
+-- The waypoint.
+---------------------------------------------------------------------------
+-- Whose the user waypoint is: "guide", "other" (the player's, or a Show on Map
+-- one), "none", or nil when the client cannot tell.
+local function owner()
+  local has = ns.MapPins.hasUserWaypoint()
+  if has == nil then return nil end
+  if not has then return "none" end
+  return ns.MapPins.isWaypointAt(spot()) and "guide" or "other"
+end
+
+-- Whether the player stands within ARRIVAL_YARDS of p (a cleared waypoint was reached).
+local function arrived(p)
+  local db = ns.Advisor and ns.Advisor.db
+  if not db or type(C_Map) ~= "table" then return false end
+  local px, py = method(call(C_Map.GetPlayerMapPosition, p.mapID, "player"), "GetXY")
+  if type(px) ~= "number" or type(py) ~= "number" then return false end
+  local yards = call(ns.Geo.distance, db, { mapID = p.mapID, x = px * 100, y = py * 100 }, p)
+  return type(yards) == "number" and yards <= Guide.ARRIVAL_YARDS
+end
+
+-- The client took the waypoint: it reads back at t (taken on trust when the
+-- client cannot read it). A set it silently ignored would pause the guide later.
+local function taken(t)
+  if ns.MapPins.hasUserWaypoint() == nil then return true end
+  return ns.MapPins.isWaypointAt(t)
+end
+
+local function place(t)
+  local previous = spot()
+  -- before the call: the client may report the new waypoint from inside it
+  setSpot(t)
+  local entry = { mapID = t.mapID, x = t.x, y = t.y, quests = { { id = t.questID, name = t.label } } }
+  if ns.MapPins.setWaypoint(entry, { quiet = true }) and taken(t) then
+    lastKey, failed = keyOf(t), false
+    notify("target")
+    return true
+  end
+  setSpot(previous)
+  failed = true
+  return false
+end
+
+-- Returns a status ("set", "same", "none", "paused", "combat", "off", "failed")
+-- and the target. force (continue, turning it on): set even for the same target
+-- and over another waypoint.
+local function update(force)
+  if not Guide.enabled() then return "off" end
+  if Guide.paused() and not force then return "paused" end
+  if inCombat() then
+    pending = true
+    pendingForce = pendingForce or force == true
+    return "combat"
+  end
+  local t = Guide.target()
+  if keyOf(t) ~= keyOf(current) then asked = 0 end
+  current = t
+  if not t then return "none" end
+  if not force then
+    if keyOf(t) == lastKey then return "same", t end
+    -- never replaces a waypoint the player placed (a missed USER_WAYPOINT_UPDATED)
+    if owner() == "other" then
+      setPaused(true, "replaced")
+      return "paused", t
+    end
+  end
+  return place(t) and "set" or "failed", t
+end
+
+-- A result even while the book is closed (the scheduler's "open" request).
+local function askResult()
+  local s = ns.Advisor and ns.Advisor.scheduler
+  if s then pcall(s.request, s, "open") end
+end
+
+local function resume()
+  setPaused(false)
+  lastKey = nil
+  local status, t = update(true)
+  if status == "none" and not (ns.Advisor and ns.Advisor.last) then askResult() end
+  return status, t
+end
+
+-- "Continue with waypoint": clears the pause and sets the current target at
+-- once (after the fight in combat), even over the player's own waypoint.
+-- Returns the status ("set", "combat", "none", "off", "failed") and the target.
+function Guide.continue()
+  if not Guide.enabled() then return "off" end
+  return resume()
+end
+
+-- Off stops the guide and removes its own waypoint (another one stays); on
+-- resumes it. The settings checkbox, the slash command, the minimap menu and
+-- the book all end up here or in the Settings.onChange listener below.
+function Guide.setEnabled(on)
+  ns.Settings.set("guide", on and true or false)
+end
+
+---------------------------------------------------------------------------
+-- Text for /advisor guide and /advisor debug.
+---------------------------------------------------------------------------
+function Guide.describe()
+  if not Guide.enabled() then return "Guide: off. Type /advisor guide on to turn it on." end
+  if Guide.paused() then
+    local s = saved(false) or {}
+    return "Guide: paused — " .. (s.why == "removed" and "you removed its waypoint"
+      or "another waypoint was set") .. ". Type /advisor guide continue to resume."
+  end
+  local t = Guide.target()
+  if not t then return "Guide: on — no next step right now." end
+  local zone = ns.UI.QuestInfo.zoneName(ns.Advisor.db, t.mapID) or ("map " .. tostring(t.mapID))
+  return string.format("Guide: on — next: %s (%s), %s %s.", tostring(t.label),
+    WHAT[t.kind] or tostring(t.kind), zone, ns.UI.Style.coords(t.x, t.y))
+end
+
+function Guide.debugLine()
+  local s = saved(false) or {}
+  local t = Guide.target()
+  local where = t and string.format("%s %s %s %.1f,%.1f", tostring(t.questID), tostring(t.kind),
+    tostring(t.mapID), t.x, t.y) or "none"
+  return string.format("guide: %s, %s, target %s, waypoint %s%s%s",
+    Guide.enabled() and "on" or "off",
+    s.paused and ("paused (" .. tostring(s.why) .. ")") or "not paused",
+    where, owner() or "unknown",
+    pending and ", waiting for the end of combat" or "",
+    failed and ", the last waypoint did not take" or "")
+end
+
+---------------------------------------------------------------------------
+-- Wiring.
+---------------------------------------------------------------------------
+-- The player removed the guide's waypoint or placed another one: pause. Only
+-- once the guide set a waypoint this session: the login-time update (the game
+-- restoring its waypoint, or not) is no removal.
+local function onWaypointUpdated()
+  if not active() or lastKey == nil then return end
+  local p = spot()
+  if not p then return end -- the guide has set none
+  local who = owner()
+  if who == nil or who == "guide" then return end
+  if who == "none" and arrived(p) then
+    setSpot(nil)
+    return
+  end
+  setPaused(true, who == "none" and "removed" or "replaced")
+end
+
+-- Off: clears the user waypoint while it is still the one the guide set (a
+-- paused guide has none: its spot is cleared on pause), then releases
+-- MapPins' claim, so a waypoint left behind shows the game's pin again and the
+-- player can remove it. Fail-soft without C_Map.ClearUserWaypoint.
+local function stop()
+  pending, pendingForce = false, false
+  local p = spot()
+  if p and ns.MapPins.isWaypointAt(p) and type(C_Map) == "table"
+      and type(C_Map.ClearUserWaypoint) == "function" and pcall(C_Map.ClearUserWaypoint) then
+    setSpot(nil)
+  end
+  ns.MapPins.releaseOurs()
+end
+
+-- Whether the target's quest action looks done in the live quest log.
+local function liveDone(t)
+  local Q = C_QuestLog
+  if type(Q) ~= "table" or t.questID == nil then return false end
+  if call(Q.IsQuestFlaggedCompleted, t.questID) then return true end
+  if t.kind == "pickup" then
+    local i = call(Q.GetLogIndexForQuestID, t.questID)
+    return type(i) == "number" and i > 0
+  end
+  if t.kind == "objective" then return call(Q.IsComplete, t.questID) == true end
+  return false
+end
+
+local function onQuestLog()
+  if not (active() and current) or asked >= Guide.MAX_ASKS then return end
+  if liveDone(current) then
+    asked = asked + 1
+    askResult()
+  end
+end
+
+ns.Advisor.onUpdate(function() update(false) end)
+
+ns.Settings.onChange(function(key, value)
+  if key ~= "guide" then return end
+  if value then
+    resume()
+  else
+    stop()
+  end
+  notify("enabled")
+end)
+
+ns.Events.on("USER_WAYPOINT_UPDATED", onWaypointUpdated)
+ns.Events.on("QUEST_LOG_UPDATE", onQuestLog)
+ns.Events.on("PLAYER_LEVEL_UP", function()
+  if active() then askResult() end
+end)
+ns.Events.on("PLAYER_REGEN_ENABLED", function()
+  if not pending then return end
+  local force = pendingForce
+  pending, pendingForce = false, false
+  update(force)
+end)
+
+ns.Init.onReady(function()
+  if active() then askResult() end
+end)

@@ -1,7 +1,8 @@
 local _, ns = ...; ns.UI = ns.UI or {}; ns.UI.Nav = ns.UI.Nav or {}
 
--- Show on Map: waypoint plus a focus pin for a quest or a place, then open the
--- world map there. In combat the map waits for PLAYER_REGEN_ENABLED.
+-- Show on Map: a waypoint for a quest or a place (the game's super-track
+-- pinpoint marks it), or our focus pin when the client cannot set one; then open
+-- the world map there. In combat the map waits for PLAYER_REGEN_ENABLED.
 local Nav = ns.UI.Nav
 local call, method = ns.Util.call, ns.Util.method
 
@@ -70,11 +71,16 @@ local function closeBook()
   if ns.UI.close then ns.UI.close() end
 end
 
--- quest: optional { id, name, level, xp } for the pin's tooltip.
+-- quest: optional { id, name, level, xp } for the pin's tooltip. A working
+-- waypoint is the one marker (and clears an earlier focus pin); the focus pin
+-- is the fallback when the waypoint fails.
 local function pinTo(place, kind, quest)
   local entry = { mapID = place.mapID, x = place.x, y = place.y,
     quests = { quest or { name = place.label } } }
-  ns.MapPins.setWaypoint(entry)
+  if ns.MapPins.setWaypoint(entry) then
+    ns.MapPins.setFocus(nil)
+    return
+  end
   entry.kind = kind == "turnin" and "turnin" or "pickup"
   ns.MapPins.setFocus(entry)
 end

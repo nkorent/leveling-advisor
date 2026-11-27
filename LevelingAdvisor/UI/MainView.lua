@@ -114,7 +114,8 @@ local function setQuestList()
   if not view.list then return end
   local ctx = UI.context()
   local collapsed = ns.chardb and ns.chardb.collapsed or {}
-  view.list:set(Model.questList(ctx.rec, collapsed))
+  local ui = ns.chardb and ns.chardb.ui
+  view.list:set(Model.questList(ctx.rec, collapsed, ui and ui.laterOpen))
 end
 
 local function buildHeader(frame)
@@ -145,6 +146,12 @@ end
 local function toggle(key)
   local c = ns.chardb
   if not c then return end
+  if key == "later" then -- collapsed by default: the saved flag is "open"
+    c.ui = c.ui or {}
+    c.ui.laterOpen = not c.ui.laterOpen
+    setQuestList()
+    return
+  end
   c.collapsed = c.collapsed or {}
   if c.collapsed[key] then c.collapsed[key] = nil else c.collapsed[key] = true end
   setQuestList()
@@ -170,6 +177,63 @@ function MainView.initRow(frame, e)
   end
 end
 
+-- "Guide: On/Paused/Off" and "Continue with waypoint", on their own row right
+-- under the recommendations heading's rule. Labels follow Guide.onChange; hidden
+-- without the guide module. Paused, the toggle still turns the guide off and
+-- Continue resumes it.
+local function guideLabel(G)
+  if not G.enabled() then return "Guide: Off" end
+  return G.paused() and "Guide: Paused" or "Guide: On"
+end
+
+local function refreshGuide()
+  local G = ns.UI.Guide
+  local on = G and G.enabled()
+  if view.guideToggle then
+    view.guideToggle:SetShown(G ~= nil)
+    view.guideToggle:SetText(G and guideLabel(G) or "Guide: Off")
+  end
+  if view.guideContinue then
+    view.guideContinue:SetShown(G ~= nil)
+    view.guideContinue:SetEnabled(on and true or false)
+  end
+end
+
+local LIST_TOP = 28 -- the list's offset below the heading
+local GUIDE_GAP = 4
+local GUIDE_ROW = 22 + GUIDE_GAP -- button height + the gap below it
+
+-- Sizes a button to its widest label: the text width + 24 (the template's
+-- ends), at least min; fallback when the client cannot measure the text.
+local function fitWidth(b, labels, min, fallback)
+  local fs = method(b, "GetFontString")
+  local widest
+  for _, label in ipairs(labels) do
+    b:SetText(label)
+    local w = method(fs, "GetStringWidth")
+    if type(w) == "number" and w > 0 then widest = math.max(widest or 0, w) end
+  end
+  b:SetWidth(widest and math.max(min, widest + 24) or fallback)
+end
+
+function MainView.buildGuideControls(right)
+  view.guideContinue = Style.button(right, "Continue with waypoint", 170)
+  fitWidth(view.guideContinue, { "Continue with waypoint" }, 150, 170)
+  view.guideContinue:SetPoint("TOPRIGHT", view.questsHeading.rule, "BOTTOMRIGHT", 0, -GUIDE_GAP)
+  view.guideContinue:SetScript("OnClick", function()
+    if ns.UI.Guide then ns.UI.Guide.continue() end
+  end)
+  view.guideToggle = Style.button(right, "Guide: On", 100)
+  fitWidth(view.guideToggle, { "Guide: On", "Guide: Paused", "Guide: Off" }, 80, 100)
+  view.guideToggle:SetPoint("RIGHT", view.guideContinue, "LEFT", -4, 0)
+  view.guideToggle:SetScript("OnClick", function()
+    local G = ns.UI.Guide
+    if G then G.setEnabled(not G.enabled()) end
+  end)
+  if ns.UI.Guide then ns.UI.Guide.onChange(refreshGuide) end
+  refreshGuide()
+end
+
 local function build(leftParent, rightParent)
   local left = CreateFrame("Frame", nil, leftParent)
   left:SetAllPoints(leftParent)
@@ -177,9 +241,11 @@ local function build(leftParent, rightParent)
   right:SetAllPoints(rightParent)
   view.questsHeading = Style.heading(right, "Recommended Quests")
   view.questsHeading:SetPoint("TOPLEFT", right, "TOPLEFT", 0, 0)
+  MainView.buildGuideControls(right)
   view.list = List.new(right, function(frame, e) MainView.initRow(frame, e) end)
   if view.list then
-    view.list.box:SetPoint("TOPLEFT", right, "TOPLEFT", 0, -28)
+    local top = LIST_TOP + (ns.UI.Guide and GUIDE_ROW or 0)
+    view.list.box:SetPoint("TOPLEFT", right, "TOPLEFT", 0, -top)
     view.list.box:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, 0)
     view.list.bar:SetPoint("TOPLEFT", view.list.box, "TOPRIGHT", 4, 0)
     view.list.bar:SetPoint("BOTTOMLEFT", view.list.box, "BOTTOMRIGHT", 4, 0)
@@ -232,6 +298,7 @@ end
 
 local function update(_, ctx)
   setQuestList()
+  refreshGuide()
   local m = Model.left(ctx.rec, ctx.state, ctx.db, UI.playerInfo())
   view.charLeft:SetText(m.char.left)
   view.charRight:SetText(m.char.right)

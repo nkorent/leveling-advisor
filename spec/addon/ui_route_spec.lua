@@ -3,9 +3,12 @@ local ui = require("spec.helpers.ui")
 describe("zone route page", function()
   local ns, env, fake, db
 
+  -- The guide is off: it plans the top zone on every result, and these specs
+  -- count the plans.
   local function load(opts)
     opts = opts or {}
     opts.state = opts.state or "S18"
+    opts.chardb = opts.chardb or { settings = { guide = false } }
     ns, env, fake = ui.load(opts)
     db = ns.Advisor.db
   end
@@ -357,7 +360,7 @@ describe("zone route page", function()
     end)
 
     it("a current dungeon lastView is restored", function()
-      load({ state = "S20" })
+      load({ state = "S22" })
       local d = ns.Advisor.last.rec.dungeon
       assert.truthy(d)
       ns.chardb.lastView = { kind = "dungeon", key = d.key }

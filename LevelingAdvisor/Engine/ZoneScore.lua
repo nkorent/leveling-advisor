@@ -1,14 +1,15 @@
 local _, ns = ...
 
--- Ranks up to MAX_ZONES zones by XP value minus travel cost.
+-- Ranks up to MAX_ZONES zones by XP value minus travel cost. Only quests the
+-- engine recommends count (Candidates.recommendable: yellow and green quests,
+-- plus turn-ins), each weighted by its colour (Tuning.FIT_WEIGHT).
 local ZoneScore = {}
 ns.ZoneScore = ZoneScore
 
 local FACTION_ID = { Alliance = 1, Horde = 2 }
 
 local function countable(c)
-  return (c.status == "eligible" or c.status == "progress" or c.status == "complete")
-    and not c.quest.dungeonQuest
+  return ns.Candidates.recommendable(c) and not c.quest.dungeonQuest
 end
 
 local function usableZone(z, factionID)
@@ -17,8 +18,12 @@ local function usableZone(z, factionID)
   return not ((z.faction == 1 or z.faction == 2) and z.faction ~= factionID)
 end
 
-local function reasonFor(db, state, zone, isHere)
+-- green: how many of the zone's counted quests are eligible green ones (not logged); total: all of them.
+local function reasonFor(db, state, zone, isHere, green, total)
   if isHere then return "You are here — finish before you leave" end
+  if green * 2 > total then
+    return "Catch up — " .. green .. (green == 1 and " quest" or " quests") .. " you skipped at your level"
+  end
   local here = state.mapID and db:zone(state.mapID)
   local factionID = FACTION_ID[state.faction]
   for _, l in ipairs(here and here.links or {}) do
@@ -66,13 +71,16 @@ function ZoneScore.rank(db, state, candidates, reach)
       for _, id in ipairs(hub.members) do sharing[id] = #hub.members end
     end
 
-    local score, xp, chainSet, chains = 0, 0, {}, 0
+    local score, xp, chainSet, chains, green = 0, 0, {}, 0, 0
     for _, c in ipairs(list) do
       local q = c.quest
       local hubFactor = 1 + math.min(T.HUB_BONUS * ((sharing[q.id] or 1) - 1), T.HUB_BONUS_CAP)
       local solo = (q.elite or (q.groupSize or 0) >= 2) and T.ELITE_SOLO_FACTOR or 1
-      score = score + c.xp * solo * hubFactor
+      -- a turn-in is worth its full XP whatever its colour: the trip is made anyway
+      local weight = c.status == "complete" and T.FIT_WEIGHT.yellow or (T.FIT_WEIGHT[c.fit] or 1)
+      score = score + c.xp * solo * hubFactor * weight
       xp = xp + c.xp
+      if c.status == "eligible" and c.fit == "green" then green = green + 1 end
       if q.chain and q.chain.id and not chainSet[q.chain.id] then
         chainSet[q.chain.id] = true
         chains = chains + 1
@@ -87,10 +95,11 @@ function ZoneScore.rank(db, state, candidates, reach)
     zones[#zones + 1] = {
       mapID = mapID, name = z.name, minLevel = z.minLevel, maxLevel = z.maxLevel,
       questCount = #list, xp = xp, chains = chains, isHere = isHere, score = score,
-      reason = reasonFor(db, state, mapID, isHere),
+      reason = reasonFor(db, state, mapID, isHere, green, #list),
     }
   end
 
+  -- the player's zone comes first only with enough quests that fit their level
   local function pinned(z) return z.isHere and z.questCount >= T.HERE_MIN_QUESTS end
   table.sort(zones, function(a, b)
     local pa, pb = pinned(a), pinned(b)

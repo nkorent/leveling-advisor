@@ -96,6 +96,17 @@ local function debugInfo()
     for i, a in ipairs(link) do bits[i] = a[1] .. "=" .. tostring(a[2]) end
     say("last link: " .. table.concat(bits, ", "))
   end
+  -- the world map's pin templates: names the game's waypoint pin if our guess is wrong
+  local pins = ns.MapPins and ns.MapPins.describeMapPins
+  if type(pins) == "function" then
+    local ok, line = pcall(pins)
+    if ok and line then say(line) end
+  end
+  local guide = ns.UI and ns.UI.Guide and ns.UI.Guide.debugLine
+  if type(guide) == "function" then
+    local ok, line = pcall(guide)
+    if ok and line then say(line) end
+  end
 end
 
 local function pins()
@@ -128,6 +139,37 @@ local function minimapCmd()
   say(on and "Minimap button shown." or "Minimap button hidden.")
 end
 
+local CONTINUED = {
+  combat = "Guide: the waypoint is set after the fight.",
+  none = "Guide: no next step right now.",
+  off = "The guide is off. Type /advisor guide on to turn it on.",
+  failed = "Guide: waypoints are not available on this client.",
+}
+
+local function guideCmd(arg)
+  local G = ns.UI and ns.UI.Guide
+  if not G then say("The guide is not available."); return end
+  arg = arg:lower()
+  if arg == "" then
+    say(G.describe())
+  elseif arg == "on" then
+    G.setEnabled(true)
+    say("Guide on: a waypoint marks your next step.")
+  elseif arg == "off" then
+    G.setEnabled(false)
+    say("Guide off.")
+  elseif arg == "continue" then
+    local status, t = G.continue()
+    if status == "set" then
+      say("Guide: waypoint set to " .. tostring(t and t.label) .. ".")
+    else
+      say(CONTINUED[status] or G.describe())
+    end
+  else
+    say("Usage: /advisor guide on|off|continue")
+  end
+end
+
 local function help()
   say("Commands:")
   print("  /advisor — open the advisor book")
@@ -141,6 +183,7 @@ local function help()
   print("  /advisor pins — count the map pins on the current map")
   print("  /advisor tab [dx dy|reset] — nudge the quest-log bookmark tab")
   print("  /advisor minimap — show or hide the minimap button")
+  print("  /advisor guide [on|off|continue] — a waypoint to your next step")
   print("  /advisor debug — diagnostics")
   print("  /advisor help — list the commands")
 end
@@ -161,6 +204,7 @@ function Slash.handle(msg)
   elseif name == "pins" then pins()
   elseif name == "tab" then tabCmd(arg)
   elseif name == "minimap" then minimapCmd()
+  elseif name == "guide" then guideCmd(arg)
   elseif name == "debug" then debugInfo()
   elseif name == "help" then help()
   else

@@ -51,4 +51,10 @@ describe("Difficulty and XP", function()
     assert.equals(0.1, XP.factor(20, 10)) -- d = 10
     assert.equals(0.1, XP.factor(20, 1))  -- d > 10 stays at 0.1
   end)
+
+  it("goodAt: yellow level, never below the required level", function()
+    assert.equals(18, D.goodAt({ level = 20 }))
+    assert.equals(18, D.goodAt({ level = 20, requiredLevel = 10 }))
+    assert.equals(19, D.goodAt({ level = 20, requiredLevel = 19 }))
+  end)
 end)

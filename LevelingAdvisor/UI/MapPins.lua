@@ -15,6 +15,7 @@ local TEMPLATE = "LevelingAdvisorMapPinTemplate"
 local LEVEL_TYPE = "PIN_FRAME_LEVEL_AREA_POI"
 local MERGE_DISTANCE = 0.5 -- map units (0-100)
 
+-- never "later": its quests are too high for now
 local PICKUP_SECTIONS = { here = true, class = true, chains = true, next = true }
 local TURNIN_SECTION = "turnin"
 
@@ -131,8 +132,10 @@ end
 
 -- Section rows that may become pins: turn-in rows (complete) at the turn-in;
 -- available rows (not "soon", not in the log) at the giver. In-progress rows
--- get no pin: Blizzard's quest POI shows their objectives.
+-- get no pin: Blizzard's quest POI shows their objectives. A Later row (too
+-- high for now; its section is not in PICKUP_SECTIONS either) is never a pin.
 local function rowPinnable(db, row, kind, state)
+  if row.later then return false end
   if kind == "turnin" then return row.state == "complete" and turnInReady(row.questID, state) end
   return row.state == "available" and not row.soon and pickable(db, row.questID, state)
 end
@@ -213,7 +216,8 @@ local function zoneRoute(A, mapID)
 end
 
 -- The "Show on map" pin (Nav): one entry { mapID, x, y, kind, quests }, shown
--- on its own map even when pinsAll is off.
+-- on its own map even when pinsAll is off. Since 0.3.0 only when the client
+-- could not set a waypoint (the game's super-track pinpoint marks it otherwise).
 local focus
 local FOCUS_SECTION = "Shown on map"
 
@@ -519,23 +523,209 @@ end
 
 local zoneName = mapName
 
-function MapPins.setWaypoint(entry)
+---------------------------------------------------------------------------
+-- Our waypoint and the game's square waypoint pin (0.3.0). The game marks a
+-- super-tracked user waypoint twice: its super-track pinpoint and, on the
+-- world map, the square user-waypoint pin (Blizzard's WaypointLocationPinTemplate,
+-- WaypointLocationDataProviderMixin). While the user waypoint is the one we set,
+-- that pin is hidden; a waypoint the player places by hand keeps it. Every API
+-- here is optional: a missing one is a silent no-op.
+---------------------------------------------------------------------------
+local SHARING_TEMPLATE = "WaypointLocationPinTemplate"
+local SAME_SPOT = 0.002 -- map units (0-1)
+local ours -- { mapID, x, y } (0-100): the waypoint setWaypoint set last
+local hiddenByUs = setmetatable({}, { __mode = "k" }) -- sharing pins we hid
+
+local function waypointXY(wp)
+  local pos = wp.position
+  if type(pos) == "table" then
+    if type(pos.x) == "number" and type(pos.y) == "number" then return pos.x, pos.y end
+    return method(pos, "GetXY")
+  end
+  return wp.x, wp.y
+end
+
+-- The client's current user waypoint, or nil.
+local function userWaypoint()
+  local wp = type(C_Map) == "table" and call(C_Map.GetUserWaypoint) or nil
+  return type(wp) == "table" and wp or nil
+end
+
+-- True when the current user waypoint is at spot ({ mapID, x, y }, 0-100): the
+-- same uiMapID and a position within SAME_SPOT.
+function MapPins.isWaypointAt(spot)
+  if type(spot) ~= "table" or type(spot.x) ~= "number" or type(spot.y) ~= "number" then return false end
+  local wp = userWaypoint()
+  if not wp or wp.uiMapID ~= spot.mapID then return false end
+  local x, y = waypointXY(wp)
+  if type(x) ~= "number" or type(y) ~= "number" then return false end
+  return math.abs(x - spot.x / 100) <= SAME_SPOT and math.abs(y - spot.y / 100) <= SAME_SPOT
+end
+
+-- True when the current user waypoint is ours (the one setWaypoint set last).
+function MapPins.isOurWaypoint()
+  return ours ~= nil and MapPins.isWaypointAt(ours)
+end
+
+-- Whether the client has a user waypoint now; nil when it cannot tell (no
+-- C_Map.GetUserWaypoint).
+function MapPins.hasUserWaypoint()
+  if type(C_Map) ~= "table" or type(C_Map.GetUserWaypoint) ~= "function" then return nil end
+  return userWaypoint() ~= nil
+end
+
+-- The world map's active pins of a template: the client's pools enumerate
+-- pin -> true; a plain list (index -> pin) is read too.
+local function activePins(template)
+  local pins = {}
+  local map = WorldMapFrame
+  if type(map) ~= "table" then return pins end
+  pcall(function()
+    local iter, st, ctl = map:EnumeratePinsByTemplate(template)
+    if type(iter) ~= "function" then return end
+    for a, b in iter, st, ctl do
+      local pin = type(a) == "table" and a or b
+      if type(pin) == "table" then pins[#pins + 1] = pin end
+    end
+  end)
+  return pins
+end
+
+-- Hides a sharing pin while the waypoint is ours; shows again one we hid
+-- once it is not.
+local function judge(pin, isOurs)
+  if isOurs then
+    if method(pin, "IsShown") ~= false then method(pin, "Hide") end
+    hiddenByUs[pin] = true
+  elseif hiddenByUs[pin] then
+    hiddenByUs[pin] = nil
+    method(pin, "Show")
+  end
+end
+
+local function sweep()
+  local isOurs = MapPins.isOurWaypoint()
+  for _, pin in ipairs(activePins(SHARING_TEMPLATE)) do judge(pin, isOurs) end
+end
+
+-- Now and once more on the next frame: the game's provider may redraw its pin
+-- after our handler ran.
+local function sweepSoon()
+  sweep()
+  if type(C_Timer) == "table" then call(C_Timer.After, 0, function() pcall(sweep) end) end
+end
+
+local function onEvent(event, fn)
+  if ns.Events and type(ns.Events.on) == "function" then ns.Events.on(event, fn) end
+end
+
+onEvent("USER_WAYPOINT_UPDATED", sweepSoon)
+
+-- A pin acquired while the waypoint is ours is hidden at once. The hook only
+-- reaches pins created after it (Mixin copies the method); the sweeps cover
+-- older ones. Under pcall: an error must not break the map's AcquirePin.
+local hooked = false
+function MapPins.hookSharingPin()
+  if hooked then return true end
+  local mixin = _G.WaypointLocationPinMixin
+  if type(hooksecurefunc) ~= "function" or type(mixin) ~= "table"
+      or type(mixin.OnAcquired) ~= "function" then
+    return false
+  end
+  hooked = pcall(hooksecurefunc, mixin, "OnAcquired", function(pin)
+    pcall(function() judge(pin, MapPins.isOurWaypoint()) end)
+  end) and true or false
+  return hooked
+end
+
+onEvent("ADDON_LOADED", function(name)
+  if name == "Blizzard_WorldMap" or name == "Blizzard_SharedMapDataProviders" then MapPins.hookSharingPin() end
+end)
+
+-- Sets the user waypoint at entry (0-100) and super-tracks it. Returns true
+-- when the client took it, false otherwise (Nav then adds its focus pin).
+-- opts.quiet: no chat line either way (the guide sets waypoints on its own).
+function MapPins.setWaypoint(entry, opts)
+  local quiet = type(opts) == "table" and opts.quiet
   local ok = false
   local point
   if type(UiMapPoint) == "table" and type(C_Map) == "table" and type(C_SuperTrack) == "table" then
     local made, p = pcall(UiMapPoint.CreateFromCoordinates, entry.mapID, entry.x / 100, entry.y / 100)
     if made and p then point = p end
   end
+  -- ours before the call: the game may draw its pin from inside SetUserWaypoint
+  local previous = ours
   if point then
+    ours = { mapID = entry.mapID, x = entry.x, y = entry.y }
     ok = ran(C_Map.SetUserWaypoint, point) and ran(C_SuperTrack.SetSuperTrackedUserWaypoint, true)
   end
   if not ok then
-    ns.Util.say("Waypoints are not available on this client.")
-    return
+    ours = previous
+    if not quiet then ns.Util.say("Waypoints are not available on this client.") end
+    return false
   end
+  sweepSoon()
+  if quiet then return true end
   local first = entry.quests[1]
   ns.Util.say(string.format("Waypoint set: %s (%s %.1f, %.1f)",
     tostring(first and first.name), zoneName(entry.mapID), entry.x, entry.y))
+  return true
+end
+
+-- Forgets our waypoint (the guide was turned off): any current user waypoint
+-- is then not ours, so the sweep shows a sharing pin we hid again and the
+-- player can click that waypoint away on the map.
+function MapPins.releaseOurs()
+  ours = nil
+  sweep()
+end
+
+-- The /advisor debug line: the world map's active pins by template, how many
+-- of them are hidden, and whose the user waypoint is. pinPools keys first,
+-- EnumerateAllPins otherwise.
+function MapPins.describeMapPins()
+  local map = WorldMapFrame
+  if type(map) ~= "table" then return "map pins: no world map" end
+  local counts, names = {}, {}
+  local function add(template, pin)
+    template = tostring(template or "?")
+    local c = counts[template]
+    if not c then
+      c = { n = 0, hidden = 0 }
+      counts[template] = c
+      names[#names + 1] = template
+    end
+    c.n = c.n + 1
+    if method(pin, "IsShown") == false then c.hidden = c.hidden + 1 end
+  end
+  local pools = rawget(map, "pinPools")
+  local read = false
+  if type(pools) == "table" then
+    read = pcall(function()
+      for template, pool in pairs(pools) do
+        local iter, st, ctl = pool:EnumerateActive()
+        for a, b in iter, st, ctl do
+          local pin = type(a) == "table" and a or b
+          if type(pin) == "table" then add(template, pin) end
+        end
+      end
+    end)
+  end
+  if not read and type(map.EnumerateAllPins) == "function" then
+    counts, names = {}, {}
+    read = pcall(function()
+      for pin in map:EnumerateAllPins() do add(pin.pinTemplate, pin) end
+    end)
+  end
+  if not read then return "map pins: n/a" end
+  table.sort(names)
+  local parts = {}
+  for _, name in ipairs(names) do
+    local c = counts[name]
+    parts[#parts + 1] = name .. " " .. c.n .. (c.hidden > 0 and (" (hidden " .. c.hidden .. ")") or "")
+  end
+  local whose = MapPins.isOurWaypoint() and "ours" or (userWaypoint() and "not ours" or "none")
+  return "map pins: " .. (#parts > 0 and table.concat(parts, ", ") or "none") .. "; waypoint: " .. whose
 end
 
 function Pin:LAOnClick(button)
@@ -573,6 +763,10 @@ local function newProvider()
       local ok, err = pcall(map.AcquirePin, map, TEMPLATE, entry)
       if not ok then geterrorhandler()(err) end
     end
+    -- The map refreshes every provider on show and on a map change: a sharing
+    -- pin re-acquired there (or made before our OnAcquired hook) is hidden
+    -- again, now and a frame later in case the game's provider runs after ours.
+    pcall(sweepSoon)
   end
   return p
 end
@@ -634,3 +828,4 @@ function MapPins.install()
 end
 
 ns.Init.onReady(MapPins.install)
+ns.Init.onReady(MapPins.hookSharingPin)

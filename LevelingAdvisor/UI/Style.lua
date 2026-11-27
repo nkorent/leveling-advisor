@@ -69,11 +69,47 @@ end
 ---------------------------------------------------------------------------
 -- Widget helpers.
 ---------------------------------------------------------------------------
+-- Dark text (relative luminance under 0.5) is ink for the parchment.
+function Style.isInk(color)
+  if type(color) ~= "table" then return false end
+  return 0.2126 * color[1] + 0.7152 * color[2] + 0.0722 * color[3] < 0.5
+end
+
+-- GameFont* objects carry a black drop shadow meant for dark backgrounds; on
+-- the parchment it smears dark ink. QuestFont and friends have none.
+local function hasFontShadow(fs)
+  return type(fs.laFont) == "string" and fs.laFont:find("^GameFont") ~= nil
+end
+
+-- Removes the drop shadow of ink text (no-op on shadowless fonts).
+function Style.ink(fs)
+  if hasFontShadow(fs) and not fs.laInked then
+    fs:SetShadowOffset(0, 0)
+    fs:SetShadowColor(0, 0, 0, 0)
+    fs.laInked = true
+  end
+end
+
+-- SetTextColor that also drops the shadow for ink colours, and gives the
+-- font's usual shadow back when a recoloured FontString turns light again.
+function Style.setTextColor(fs, r, g, b)
+  fs:SetTextColor(r, g, b)
+  if Style.isInk({ r, g, b }) then
+    Style.ink(fs)
+  elseif fs.laInked then
+    fs:SetShadowOffset(1, -1)
+    fs:SetShadowColor(0, 0, 0, 1)
+    fs.laInked = nil
+  end
+end
+
 -- A left-justified FontString (default QuestFont), in `color` when given.
 function Style.text(parent, font, color)
-  local fs = parent:CreateFontString(nil, "ARTWORK", font or "QuestFont")
+  font = font or "QuestFont"
+  local fs = parent:CreateFontString(nil, "ARTWORK", font)
+  fs.laFont = font
   fs:SetJustifyH("LEFT")
-  if color then fs:SetTextColor(color[1], color[2], color[3]) end
+  if color then Style.setTextColor(fs, color[1], color[2], color[3]) end
   return fs
 end
 

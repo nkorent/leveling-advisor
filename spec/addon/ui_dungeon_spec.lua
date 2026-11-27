@@ -4,7 +4,7 @@ describe("dungeon page", function()
   local ns, env, fake
 
   local function load(state)
-    ns, env, fake = ui.load({ state = state or "S20" })
+    ns, env, fake = ui.load({ state = state or "S22" })
   end
 
   local function model(state)
@@ -32,7 +32,7 @@ describe("dungeon page", function()
     return out
   end
 
-  it("dungeon model for S20", function()
+  it("dungeon model for S22", function()
     load()
     local m = model()
     assert.equal("Blackfathom Deeps", m.title)
@@ -56,7 +56,7 @@ describe("dungeon page", function()
   it("a picked-up dungeon quest is checked", function()
     load()
     local id = ns.Advisor.last.rec.dungeon.pickups[1].questID
-    local s = ui.with("S20", { log = { [id] = { complete = false } } })
+    local s = ui.with("S22", { log = { [id] = { complete = false } } })
     local m = model(s)
     assert.equal("1 of 4 done", m.progress)
     assert.is_true(m.steps[1].done)
@@ -68,7 +68,7 @@ describe("dungeon page", function()
     load()
     local log = {}
     for _, p in ipairs(ns.Advisor.last.rec.dungeon.pickups) do log[p.questID] = { complete = false } end
-    local m = model(ui.with("S20", { log = log }))
+    local m = model(ui.with("S22", { log = log }))
     assert.equal("4 of 4 done", m.progress)
     assert.is_true(m.steps[5].current)
   end)
@@ -77,7 +77,7 @@ describe("dungeon page", function()
     load()
     ns.UI.show({ kind = "dungeon", key = "BFD" })
     assert.truthy(fake.visible(fake.text("Blackfathom Deeps")))
-    assert.truthy(fake.visible(fake.text("Best at 21 — three of its quests start on your way")))
+    assert.truthy(fake.visible(fake.text("Best at 22 — three of its quests start on your way")))
     assert.truthy(fake.visible(fake.text("Before You Go · pick these up first")))
     assert.truthy(fake.visible(fake.text("0 of 4 done")))
     for _, id in ipairs({ 1199, 1275, 6563, 6922 }) do assert.truthy(questRow(id), "row " .. id) end
@@ -195,6 +195,65 @@ describe("dungeon page", function()
       show()
       assert.equal("Not available to your character", questRow(B).laQuest.sub:GetText())
       assert.not_equal("Not available to your character", questRow(R).laQuest.sub:GetText())
+    end)
+
+    it("a blocked path is a grey icon, whatever is left (0.3.0)", function()
+      show()
+      local GREY = { 0.45, 0.45, 0.45 }
+      local b = badgeOf(B)
+      assert.same(GREY, { b.icon.vertex[1], b.icon.vertex[2], b.icon.vertex[3] })
+      ns.Unlock.path = function(_, id)
+        if id == R then
+          return { steps = { { questID = 2, name = "Done One", status = "done" } }, total = 1, done = 1,
+            remaining = 0, blocked = true }
+        end
+      end
+      ns.UI.refresh()
+      b = badgeOf(R)
+      assert.same(GREY, { b.icon.vertex[1], b.icon.vertex[2], b.icon.vertex[3] })
+      assert.is_false(b.count:IsShown())
+      -- the tooltip is unchanged
+      fake.enter(b.frame)
+      assert.equal("Not available to your character", fake.tooltip.lines[2][1])
+    end)
+
+    -- A dungeon row whose own status is "Horde only", rendered with a path.
+    local function renderBlocked(path, short)
+      local row = ns.UI.QuestInfo.row(ns.Advisor.db, C, ns.Advisor.last.state)
+      row.state, row.soon, row.short = "unavailable", false, short
+      ns.Unlock.path = function() return path end
+      local frame = fake.newFrame("Button", nil, env.UIParent)
+      return ns.UI.QuestRow.render(frame, row, { chain = true, sub = ns.UI.QuestInfo.statusText(row) })
+    end
+
+    it("blocked by the quest itself: the sub line is the quest's own status (0.3.0)", function()
+      load()
+      -- no step of the path is blocked, so the quest itself is ruled out
+      local p = renderBlocked({ steps = { { questID = 1, name = "Open Step", status = "start", number = 1 } },
+        total = 2, done = 0, remaining = 2, blocked = true }, "Horde only")
+      assert.equal("Horde only", p.sub:GetText())
+      -- an any-group with one option still open is not a blocked step either
+      p = renderBlocked({ steps = { { questID = 1, status = "blocked", number = 1 },
+        { questID = 2, status = "locked", number = 1 } }, total = 2, done = 0, remaining = 2, blocked = true },
+        "Horde only")
+      assert.equal("Horde only", p.sub:GetText())
+      -- no status text of its own: the generic line
+      p = renderBlocked({ steps = { { questID = 1, status = "start", number = 1 } }, total = 2, done = 0,
+        remaining = 2, blocked = true }, nil)
+      assert.equal("Not available to your character", p.sub:GetText())
+      assert.same({}, env.errors)
+    end)
+
+    it("blocked by an earlier step: the generic line stays", function()
+      load()
+      local p = renderBlocked({ steps = { { questID = 1, status = "blocked", number = 1 },
+        { questID = 2, status = "blocked", number = 1 }, { questID = 3, status = "start", number = 2 } },
+        total = 3, done = 0, remaining = 3, blocked = true }, "Horde only")
+      assert.equal("Not available to your character", p.sub:GetText())
+      -- steps without unit numbers (each its own unit)
+      p = renderBlocked({ steps = { { questID = 1, status = "blocked" } }, total = 2, done = 0, remaining = 2,
+        blocked = true }, "Horde only")
+      assert.equal("Not available to your character", p.sub:GetText())
     end)
 
     it("a blocked path says not available even when it names a first step", function()
@@ -316,7 +375,7 @@ describe("dungeon page", function()
         data.quests[1275][19] = { all = { 3765 } }
       end
       local function rowFor(completed)
-        ns, env, fake = ui.load({ state = ui.with("S20", { completed = completed }), patch = patch })
+        ns, env, fake = ui.load({ state = ui.with("S22", { completed = completed }), patch = patch })
         ns.UI.show({ kind = "dungeon", key = "BFD" })
         return questRow(1275).laQuest
       end
@@ -384,7 +443,7 @@ describe("dungeon page", function()
 
     it("a dungeon row with no path keeps its Chain tag, which can only be Chain 1/m (R4, R7)", function()
       -- a quest that needs N: N has no path but starts a chain of two
-      ns, env, fake = ui.load({ state = "S20", patch = function(data)
+      ns, env, fake = ui.load({ state = "S22", patch = function(data)
         local r = {}
         for i, v in pairs(data.quests[1010]) do r[i] = v end
         r[1] = "Knowledge Returned"; r[19] = { all = { N } }
@@ -469,7 +528,7 @@ describe("dungeon page", function()
     -- I1 (final review): rows carry their status; impossible quests never
     -- look available, and the actionable ones come first.
     it("quest rows carry their status, actionable ones first", function()
-      ns, env, fake = ui.load({ state = "S20", patch = function(data)
+      ns, env, fake = ui.load({ state = "S22", patch = function(data)
         local q = data.dungeons.BFD.quests
         table.insert(q, 1, 6382)   -- Horde only
         table.insert(q, 2, 7002)   -- Warrior only

@@ -1,7 +1,10 @@
 local _, ns = ...
 
 -- Builds the quest sections for the right-hand page. Each quest appears in at
--- most one section (priority: turnin > class > here > chains > next).
+-- most one section (priority: turnin > class > here > chains > next > later).
+-- The recommended sections hold quests the engine recommends
+-- (Candidates.recommendable: yellow and green, plus turn-ins at any colour);
+-- the quests too high for now (status "later") are listed last, in Later.
 local Sections = {}
 ns.Sections = Sections
 
@@ -11,8 +14,15 @@ local TITLES = {
   class = "Class Quests",
   chains = "Continue Your Chains",
   next = "For Your Next Zone",
+  later = "Later — too high for now",
 }
-local DISPLAY_ORDER = { "turnin", "here", "class", "chains", "next" }
+local DISPLAY_ORDER = { "turnin", "here", "class", "chains", "next", "later" }
+
+-- The status a row describes: a later candidate keeps what it was before the
+-- level-fit rule (eligible, soon or progress).
+local function baseOf(c)
+  return c.baseStatus or c.status
+end
 
 local function playerPoint(state)
   return { state.mapID, state.x, state.y }
@@ -36,8 +46,9 @@ end
 -- for progress, giver otherwise.
 local function rowYards(db, state, c)
   local q = c.quest
-  if c.status == "complete" then return dist(db, state, q.turnIn) end
-  if c.status == "progress" then
+  local status = baseOf(c)
+  if status == "complete" then return dist(db, state, q.turnIn) end
+  if status == "progress" then
     local pts = q.points
     if pts and #pts > 0 then return minDist(db, state, pts) end
     return dist(db, state, q.turnIn)
@@ -48,15 +59,19 @@ end
 local function makeRow(db, state, c)
   local q = c.quest
   local g = q.giver or {}
-  local st = (c.status == "progress" and "progress")
-    or (c.status == "complete" and "complete") or "available"
+  local base = baseOf(c)
+  local st = (base == "progress" and "progress")
+    or (base == "complete" and "complete") or "available"
+  local later = c.status == "later"
   return {
     questID = q.id,
     name = q.name,
     level = q.level,
-    color = ns.Difficulty.color(q.level, state.level, state.greyAtOrBelow),
+    color = c.fit,
     state = st,
-    soon = c.status == "soon",
+    soon = base == "soon",
+    later = later or nil,
+    goodAt = later and ns.Difficulty.goodAt(q) or nil,
     xp = c.xp,
     giver = { mapID = g.mapID, x = g.x, y = g.y, kind = g.kind, id = g.id },
     yards = rowYards(db, state, c),
@@ -84,6 +99,12 @@ local function byYardsThenLevel(a, b)
   if (ya == nil) ~= (yb == nil) then return yb == nil end
   if a.level ~= b.level then return (a.level or 0) < (b.level or 0) end
   return a.questID < b.questID
+end
+
+-- Later: the quests that get good soonest first (quest level), nearest first.
+local function byLevelThenYards(a, b)
+  if a.level ~= b.level then return (a.level or 0) < (b.level or 0) end
+  return byYards(a, b)
 end
 
 local function byXp(a, b)
@@ -125,15 +146,21 @@ function Sections.build(db, state, candidates, zones)
     return yards ~= nil and yards <= T.RIGHT_HERE_YD
   end
 
+  local recommendable = ns.Candidates.recommendable
+  -- a quest to pick up now that fits the player's level
+  local function takeable(c)
+    return c.status == "eligible" and recommendable(c)
+  end
+
   result.turnin = take(function(c) return c.status == "complete" end, byYards)
 
   result.class = take(function(c)
-    return (c.status == "eligible" or c.status == "soon") and c.quest.classQuest
+    return takeable(c) and c.quest.classQuest
   end, byYardsThenLevel)
 
   result.here = take(function(c)
     local q = c.quest
-    if q.dungeonQuest then return false end
+    if q.dungeonQuest or not recommendable(c) then return false end
     if c.status == "eligible" then
       return near(dist(db, state, q.giver))
     elseif c.status == "progress" then
@@ -147,14 +174,19 @@ function Sections.build(db, state, candidates, zones)
 
   result.chains = take(function(c)
     local q = c.quest
-    return c.status == "eligible" and q.chain and q.chain.index > 1 and not q.dungeonQuest
+    return takeable(c) and q.chain and q.chain.index > 1 and not q.dungeonQuest
   end, byXp, T.SECTION_LIMITS.chains)
 
   result.next = take(function(c)
     local q = c.quest
-    return nextZone ~= nil and c.status == "eligible" and q.zone == nextZone
+    return nextZone ~= nil and takeable(c) and q.zone == nextZone
       and not q.dungeonQuest
   end, byXp, T.SECTION_LIMITS.next)
+
+  -- a dungeon quest not in the log belongs to the dungeon card, not to Later
+  result.later = take(function(c)
+    return c.status == "later" and (not c.quest.dungeonQuest or baseOf(c) == "progress")
+  end, byLevelThenYards, T.SECTION_LIMITS.later)
 
   local out = {}
   for _, key in ipairs(DISPLAY_ORDER) do

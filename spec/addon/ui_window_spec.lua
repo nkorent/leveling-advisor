@@ -550,7 +550,7 @@ describe("book window", function()
       assert.same({
         "UI\\MapPins.lua", "UI\\MapPins.xml", "UI\\Style.lua", "UI\\Templates.xml", "UI\\Window.lua",
         "UI\\List.lua", "UI\\ZoneArt.lua", "UI\\QuestInfo.lua", "UI\\Model.lua", "UI\\Nav.lua",
-        "UI\\Items.lua", "UI\\Menu.lua", "UI\\QuestRow.lua", "UI\\MiniMap.lua", "UI\\UnlockPath.lua",
+        "UI\\Guide.lua", "UI\\Items.lua", "UI\\Menu.lua", "UI\\QuestRow.lua", "UI\\MiniMap.lua", "UI\\UnlockPath.lua",
         "UI\\QuestDetail.lua",
         "UI\\MainView.lua", "UI\\RouteView.lua", "UI\\Search.lua", "UI\\QuestLogTab.lua",
       }, ui_files)
@@ -559,7 +559,7 @@ describe("book window", function()
 
     it("every stub module exists in ns.UI", function()
       local ns = ui.load({ noData = true })
-      for _, name in ipairs({ "List", "ZoneArt", "QuestInfo", "Model", "Nav", "Items", "Menu",
+      for _, name in ipairs({ "List", "ZoneArt", "QuestInfo", "Model", "Nav", "Guide", "Items", "Menu",
           "QuestRow", "MiniMap", "UnlockPath", "QuestDetail", "MainView", "RouteView", "Search", "QuestLogTab" }) do
         assert.is_table(ns.UI[name], name)
       end

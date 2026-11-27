@@ -23,3 +23,11 @@ function Difficulty.color(questLevel, playerLevel, greyAtOrBelow)
   if questLevel > greyAtOrBelow then return "green" end
   return "grey"
 end
+
+-- The first player level at which a quest is good: yellow (quest level - 2),
+-- and not below the level it needs to be taken.
+function Difficulty.goodAt(quest)
+  local level = (quest.level or 0) - 2
+  if quest.requiredLevel and quest.requiredLevel > level then return quest.requiredLevel end
+  return level
+end

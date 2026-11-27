@@ -146,6 +146,20 @@ describe("MapPins.build", function()
     assert.same({}, build(r, db, 1411))
   end)
 
+  -- Level fit (0.3.0): the Later section lists quests too high for now; none becomes a pin.
+  it("never makes a pin from the later section", function()
+    local r = rec(sec("later", row(1, 1411, 10, 10, { later = true, goodAt = 7 }),
+      row(2, 1411, 20, 20, { later = true, goodAt = 8, state = "progress" })))
+    assert.same({}, build(r, db, 1411))
+  end)
+
+  it("never pins a later row, whatever section holds it", function()
+    local r = rec(sec("here", row(1, 1411, 10, 10, { later = true, goodAt = 7 }), row(2, 1411, 20, 20)))
+    local pins = build(r, db, 1411)
+    assert.equals(1, #pins)
+    assert.equals(2, pins[1].quests[1].id)
+  end)
+
   -- C1 (final review): a "!" only where the player can pick the quest up now.
   it("gives no pickup pin to a soon row or an in-progress row", function()
     local r = rec(

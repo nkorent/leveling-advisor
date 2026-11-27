@@ -16,8 +16,11 @@ ns.Tuning = {
   DUNGEON_LEVEL_WINDOW = 2,
   MAX_ZONES = 3,
   HERE_MIN_QUESTS = 2,
+  -- Level fit: a zone's score counts its yellow and green quests at these weights (a complete
+  -- quest of another colour counts at 1). Orange quests are not recommended at all.
+  FIT_WEIGHT = { yellow = 1.0, green = 0.8 },
   -- turnin and class sections are unlimited
-  SECTION_LIMITS = { here = 6, chains = 4, next = 3 },
+  SECTION_LIMITS = { here = 6, chains = 4, next = 3, later = 12 },
   LINK_XP = { walk = 0, boat = 500, zeppelin = 500, tram = 300, portal = 200, flight = 300 },
   ROUTE_IMPROVE_MAX_PASSES = 8,
   ROUTE_IMPROVE_MAX_MS = 3,

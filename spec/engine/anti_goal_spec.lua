@@ -106,11 +106,12 @@ describe("Quests the player cannot get", function()
       end)
     end
 
-    it("is a 'soon' candidate", function()
+    it("is a 'later' candidate that was 'soon'", function()
       local c = ns.Candidates.build(soonDb(), S18)
-      assert.equals("soon", H.candidateFor(c, 8100).status)
-      assert.equals("soon", H.candidateFor(c, 8101).status)
-      assert.equals("soon", H.candidateFor(c, 8102).status)
+      for _, id in ipairs({ 8100, 8101, 8102 }) do
+        local cand = H.candidateFor(c, id)
+        assert.same({ "later", "soon" }, { cand.status, cand.baseStatus }, "quest " .. id)
+      end
     end)
 
     it("is not routed", function()
@@ -137,13 +138,18 @@ describe("Quests the player cannot get", function()
       assert.same({ 1010, 1007, 1100 }, ids(find(secs, "next")))
     end)
 
-    it("shows a soon class quest only as a marked row in Class Quests", function()
+    it("shows a soon class quest only as a marked row in Later, not in Class Quests", function()
       local d = soonDb()
       local c = ns.Candidates.build(d, S18)
-      local class = find(ns.Sections.build(d, S18, c, ns.ZoneScore.rank(d, S18, c)), "class")
-      assert.same({ 5061, 8101 }, ids(class))
+      local secs = ns.Sections.build(d, S18, c, ns.ZoneScore.rank(d, S18, c))
+      local class = find(secs, "class")
+      assert.same({ 5061 }, ids(class))
       assert.is_false(class.rows[1].soon)
-      assert.is_true(class.rows[2].soon)
+      local later, row = find(secs, "later"), nil
+      for _, r in ipairs(later.rows) do
+        if r.questID == 8101 then row = r end
+      end
+      assert.same({ true, true }, { row.soon, row.later })
     end)
   end)
 end)

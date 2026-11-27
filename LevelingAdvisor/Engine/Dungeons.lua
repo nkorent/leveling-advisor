@@ -43,6 +43,15 @@ local function orderPickups(db, state, list)
   return out
 end
 
+-- The lowest level at which two of the quests are good (`goods` sorted
+-- ascending: each quest's goodAt), kept within the dungeon's range. With fewer
+-- than two quests, or when the level is above the range, "minLevel - 1".
+function Dungeons.bestLevel(goods, d)
+  local level = goods[2]
+  if not level or level > d.maxLevel then return d.minLevel - 1 end
+  return math.max(level, d.minLevel)
+end
+
 function Dungeons.recommend(db, state, candidates, zones, reach)
   if state.settings and state.settings.dungeons == false then return nil end
   local T = ns.Tuning
@@ -75,8 +84,9 @@ function Dungeons.recommend(db, state, candidates, zones, reach)
       local list = {}
       for _, id in ipairs(d.quests or {}) do
         local c = candidateOf(id)
-        -- "soon" quests cannot be picked up yet, so they never qualify a dungeon
-        if c and (c.status == "eligible" or c.status == "progress" or c.status == "complete") then
+        -- only quests the engine recommends qualify a dungeon: not a later quest (orange, soon, or
+        -- orange or red in the log), nor a grey one in the log; a complete one still does
+        if c and ns.Candidates.recommendable(c) then
           list[#list + 1] = c
         end
       end
@@ -113,7 +123,14 @@ function Dungeons.recommend(db, state, candidates, zones, reach)
   for _, p in ipairs(pickups) do
     if not p.inLog and p.mapID and (p.mapID == state.mapID or p.mapID == nextZone) then onWay = onWay + 1 end
   end
-  local bestLevel = d.minLevel - 1
+  -- the lowest level at which two of its quests are yellow or green (quest level - L <= 2)
+  local levels = {}
+  for _, c in ipairs(best.list) do
+    if c.quest.level then levels[#levels + 1] = ns.Difficulty.goodAt(c.quest) end
+  end
+  table.sort(levels)
+  -- within the dungeon's range; above it (all quests too high) or fewer than two quests: the old text
+  local bestLevel = Dungeons.bestLevel(levels, d)
   local e = d.entrance or {}
   return {
     key = bestKey, name = d.name, minLevel = d.minLevel, maxLevel = d.maxLevel,

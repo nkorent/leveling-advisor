@@ -3,7 +3,7 @@
 -- parsed and checked, so a broken data build or engine fails the suite (and the release build).
 -- Skipped when the generated data or luajit is absent.
 local DATA = { "Meta", "Zones", "NPCs", "Dungeons", "Quests" }
-local SECTION_KEYS = { turnin = true, here = true, class = true, chains = true, next = true }
+local SECTION_KEYS = { turnin = true, here = true, class = true, chains = true, next = true, later = true }
 
 local function exists(p)
   local f = io.open(p, "r")

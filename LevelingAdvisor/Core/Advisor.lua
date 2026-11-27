@@ -179,6 +179,14 @@ function Advisor.plan(mapID)
   return plan
 end
 
+-- The zone's frozen plan for the current result when one was made already, else nil.
+-- Never plans: for readers that must not compute (the quest giver ribbon).
+function Advisor.cachedPlan(mapID)
+  local last, plan = Advisor.last, plans[mapID]
+  if not (last and plan) or plan.key ~= planKey(last) then return nil end
+  return plan
+end
+
 function Advisor.replan(mapID)
   if mapID == nil then plans = {} else plans[mapID] = nil end
 end

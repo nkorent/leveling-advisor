@@ -86,6 +86,19 @@ local function copyEntries(list)
   return out
 end
 
+-- The name a required item has in the quest log: its item objective's (Contract A
+-- field 26), else the item's own name (env.itemName, GetItemInfo).
+local function requiredName(q, id, env)
+  for _, o in ipairs(q.objectives or {}) do
+    if o.kind == 3 and o.id == id and o.name then return o.name end
+  end
+  return env.itemName and env.itemName(id) or nil
+end
+
+-- env: count(itemID) -> bags count; live = Items.liveRewards; objectives =
+-- QuestInfo.liveObjectives (the quest log's live objectives); itemName(itemID).
+-- A required item's count is the data's (nil when unknown: never a made-up 1); the
+-- log's numRequired / numFulfilled for that item win.
 function Items.model(db, q, state, env)
   env = env or {}
   local live = env.live
@@ -95,8 +108,12 @@ function Items.model(db, q, state, env)
     m.provided[#m.provided + 1] = { itemID = id, note = "given" }
   end
   for _, e in ipairs(items.required or {}) do
-    local id, count = pair(e)
+    local id, count = e, nil
+    if type(e) == "table" then id, count = e[1], e[2] end
     local have = env.count and env.count(id) or 0
+    local progress = env.objectives
+      and UI.QuestInfo.liveProgress(env.objectives, requiredName(q, id, env), "item") or nil
+    if progress then count, have = progress.need, progress.have end
     m.required[#m.required + 1] = { itemID = id, count = count, have = have, note = "needed" }
   end
   local r = q.rewards or {}
@@ -154,6 +171,11 @@ end
 function Items.realEnv(questID)
   return {
     live = Items.liveRewards(questID),
+    objectives = UI.QuestInfo.liveObjectives(questID),
+    itemName = function(id)
+      local name = call(itemAPI().GetItemInfo, id)
+      return name
+    end,
     count = function(id)
       return tonumber(call(itemAPI().GetItemCount, id)) or 0
     end,
@@ -253,7 +275,8 @@ end
 
 local function showCount(b, entry)
   if entry.have ~= nil then
-    b.Count:SetText(entry.have .. "/" .. (entry.count or 1))
+    -- a required item: "have/count", or just "have" when the count is unknown
+    b.Count:SetText(entry.count and (entry.have .. "/" .. entry.count) or tostring(entry.have))
     b.Count:Show()
   else
     call(SetItemButtonCount, b, (entry.count or 1) > 1 and entry.count or 1)
@@ -265,7 +288,7 @@ local function applyInfo(b, id, name, quality)
     b.laName:SetText(name or "")
     if quality then
       local r, g, bl = call(itemAPI().GetItemQualityColor, quality)
-      if r then b.laName:SetTextColor(r, g, bl) end
+      if r then Style.setTextColor(b.laName, r, g, bl) end
     end
   end
   if quality then call(SetItemButtonQuality, b, quality, id) end

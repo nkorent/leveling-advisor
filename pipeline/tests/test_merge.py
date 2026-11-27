@@ -115,7 +115,7 @@ def test_changed_in_forever_blocks_restrictions():
     assert q["provenance"]["prereq"] == "outofgames"
     assert q["quest_level"] == 14 and q["level_source"] == "estimate"
     assert q["provenance"]["quest_level"] == "outofgames"
-    assert q["items"] == {"provided": [7], "required": [{"item_id": 8, "count": 1}]}
+    assert q["items"] == {"provided": [7], "required": [{"item_id": 8, "count": None}]}   # no number in the text
     assert report["counts"]["changed_in_forever"] == 1
 
 
@@ -493,8 +493,8 @@ def test_unchanged_questie_fills_exclusive_breadcrumb_and_items():
     quests, _ = run([oq()], [z])
     q = quests[100]
     assert q["exclusive_to"] == [7, 8] and q["breadcrumb_of"] == 9
-    assert q["items"] == {"provided": [11], "required": [{"item_id": 12, "count": 1},
-                                                        {"item_id": 13, "count": 1}]}
+    assert q["items"] == {"provided": [11], "required": [{"item_id": 12, "count": None},
+                                                        {"item_id": 13, "count": None}]}
     assert q["required_max_level"] == 30
     assert q["provenance"]["items"] == "questie" and q["provenance"]["required_max_level"] == "questie"
 
@@ -622,8 +622,11 @@ def test_fixture_4763_merged_with_questie():
                                       {"item_id": 15203, "count": 1}]
     assert q["rewards"]["money"] == 2000
     assert q["rewards"]["rep"] == [{"faction": "Darnassus", "amount": 150}]
-    assert q["items"] == {"provided": [12346], "required": [{"item_id": 12355, "count": 1}]}
-    assert q["objective_points"] == [{"map_id": 1439, "x": 52.5, "y": 33.4}]
+    assert q["items"] == {"provided": [12346], "required": [{"item_id": 12355, "count": None}]}
+    # no QuestieDB names here: the item objective has no name, so its point stays unattributed
+    assert q["objective_points"] == [{"map_id": 1439, "x": 52.5, "y": 33.4, "objective": None}]
+    assert q["objectives"] == [{"kind": "item", "id": 12355, "name": None, "count": None, "from": None,
+                                "from_kind": None, "from_more": False}]
     assert report["excluded"] == {}
 
 
@@ -1376,3 +1379,65 @@ def test_stub_faction_none_when_faction_conflict():
     assert report["excluded"] == {400: "faction-conflict"}
     assert report["stubs"][400]["faction"] is None
     assert report["stubs"][400]["reason"] == "faction-conflict"
+
+
+# ---------------------------------------------------------------- objectives (Contract A field 26, Task 8)
+
+def _names_qdb(**kw):
+    """A QuestieDBData stand-in: names and drop sources only (no giver or XP fill data)."""
+    from types import SimpleNamespace
+    base = dict(npcs={299: {"name": "Young Wolf", "friendly": None}, 69: {"name": "Timber Wolf", "friendly": None}},
+                objects={}, items={750: {"name": "Tough Wolf Meat", "npc_drops": [69, 299], "object_drops": []}},
+                npc_spawns={}, object_spawns={}, xp={}, hidden_ids=frozenset(), quest_problems={})
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def _pt(name, x=45.2, y=35.2, map_id=1439):
+    return {"map_id": map_id, "x": x, "y": y, "name": name}
+
+
+def test_objectives_and_point_indices_from_questiedb():
+    o = oq(33, objective_text="Bring 8 pieces of Tough Wolf Meat to Eagan Peltskinner.",
+           objective_points=[_pt("Tough Wolf Meat"), _pt("Young Wolf", 46.0), _pt("Somewhere Else", 47.0)])
+    z = qq(33, objective_item_ids=[750], objectives=[{"group": 3, "id": 750, "text": None}])
+    quests, report = run([o], [z], questiedb=_names_qdb())
+    q = quests[33]
+    # Young Wolf is one of the quest's points, so it comes before Timber Wolf
+    assert q["objectives"] == [{"kind": "item", "id": 750, "name": "Tough Wolf Meat", "count": 8,
+                                "from": ["Young Wolf", "Timber Wolf"], "from_kind": "npc", "from_more": False}]
+    assert q["objective_points"] == [{"map_id": 1439, "x": 45.2, "y": 35.2, "objective": 1},
+                                     {"map_id": 1439, "x": 46.0, "y": 35.2, "objective": 1},
+                                     {"map_id": 1439, "x": 47.0, "y": 35.2, "objective": None}]
+    assert q["items"]["required"] == [{"item_id": 750, "count": 8}]
+    assert q["provenance"]["objectives"] == "questiedb"
+    assert report["counts"]["objectives"] == {"quests": 1, "objectives": 1, "counts": 1, "points": 3,
+                                              "points_indexed": 2, "required_items": 1, "required_counts": 1}
+
+
+def test_required_item_count_comes_from_the_objective_text():
+    """Addendum: Up to Snuff needs 15 shares of Snuff, not 1; an unknown count is None, never 1."""
+    texts = {587: "Deeg in Booty Bay wants you to bring him 15 shares of Snuff.", 2: "Bring Deeg his Snuff."}
+    snuff = _names_qdb(items={3910: {"name": "Snuff", "npc_drops": [], "object_drops": []}})
+    quests, report = run([oq(i, objective_text=t) for i, t in texts.items()],
+                         [qq(i, objective_item_ids=[3910]) for i in texts], questiedb=snuff)
+    assert quests[587]["items"]["required"] == [{"item_id": 3910, "count": 15}]
+    assert quests[587]["objectives"][0]["count"] == 15
+    assert quests[2]["items"]["required"] == [{"item_id": 3910, "count": None}]
+    assert report["counts"]["objectives"]["required_counts"] == 1
+
+
+def test_objectives_fall_back_to_the_point_names():
+    o = oq(objective_text="Find 3 strange glows.", objective_points=[_pt("Strange Glow"), _pt("Strange Glow", 50.0)])
+    quests, _ = run([o], [], without={"questie"})
+    q = quests[100]
+    assert q["objectives"] == [{"kind": "other", "id": None, "name": "Strange Glow", "count": 3, "from": None,
+                                "from_kind": None, "from_more": False}]
+    assert [p["objective"] for p in q["objective_points"]] == [1, 1]
+    assert q["provenance"]["objectives"] == "outofgames"
+
+
+def test_no_objectives_without_questie_rows_or_points():
+    quests, report = run([oq()], [qq()])
+    assert quests[100]["objectives"] == [] and "objectives" not in quests[100]["provenance"]
+    assert report["counts"]["objectives"]["quests"] == 0

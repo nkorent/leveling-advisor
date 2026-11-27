@@ -55,9 +55,11 @@ describe("Route.forZone", function()
     assert.is_nil(stepOf(steps, 4763, "pickup"))
   end)
   it("includes recommended dungeon pickups only", function()
-    local c = Candidates.build(db, S20)
-    assert.is_nil(stepOf(Route.forZone(db, S20, 1439, c, {}), 1275, "pickup"))
-    assert.is_not_nil(stepOf(Route.forZone(db, S20, 1439, c, { dungeonKey = "BFD" }), 1275, "pickup"))
+    -- level 22: 1275 (level 24) is yellow; at 20 it is orange and never routed
+    local S22 = H.states.S22
+    local c = Candidates.build(db, S22)
+    assert.is_nil(stepOf(Route.forZone(db, S22, 1439, c, {}), 1275, "pickup"))
+    assert.is_not_nil(stepOf(Route.forZone(db, S22, 1439, c, { dungeonKey = "BFD" }), 1275, "pickup"))
   end)
   it("leaves out another dungeon's quest when BFD is recommended", function()
     -- 1486 (Wailing Caverns) is eligible at S20 and its giver stands in Darkshore
@@ -187,5 +189,71 @@ describe("Route.forZone", function()
     local steps = Route.forZone(db, s, 1439, Candidates.build(db, s), { improve = false })
     assert.same({ "4730:pickup", "4730:turnin", "5061:pickup", "5061:turnin" }, summary(steps)[1].actions)
     assert.equals(2, steps[1].counts.pickup)
+  end)
+end)
+
+-- Level fit (0.3.0): the zone route visits yellow and green quests only (complete quests are
+-- turned in at any level).
+describe("Route.forZone level fit", function()
+  local function copyRec(r)
+    local out = {}
+    for k, v in pairs(r) do out[k] = v end
+    return out
+  end
+  local function dbWith(edit)
+    local data = H.data()
+    edit(data.quests)
+    return ns.DB.new(data)
+  end
+  local function route(d, s)
+    return Route.forZone(d, s, 1439, Candidates.build(d, s), {})
+  end
+  local function routedIDs(steps)
+    local seen = {}
+    for _, st in ipairs(steps) do
+      for _, a in ipairs(st.actions) do seen[a[1]] = true end
+    end
+    return seen
+  end
+
+  it("leaves out an orange quest at the player's feet", function()
+    local d = dbWith(function(q) q[8501] = copyRec(q[4763]); q[8501][19] = nil; q[8501][6] = 21 end)
+    local steps = route(d, S18)
+    assert.is_nil(routedIDs(steps)[8501])
+    assert.is_not_nil(stepOf(steps, 4763, "pickup"))
+  end)
+
+  it("leaves out an orange chain follow-up (the chain extension)", function()
+    -- 965 done, 4762 open: 4763 (now level 21) would follow 4762's turn-in
+    local d = dbWith(function(q) q[4763][6] = 21 end)
+    local steps = route(d, with(S18, { completed = { [965] = true } }))
+    assert.is_not_nil(stepOf(steps, 4762, "turnin"))
+    assert.is_nil(stepOf(steps, 4763, "pickup"))
+  end)
+
+  it("leaves out an orange in-progress quest; a yellow one stays", function()
+    local steps = route(db, S18)
+    assert.is_not_nil(stepOf(steps, 966, "objective")) -- 966 is level 18, in the log
+    local d = dbWith(function(q) q[966][6] = 21 end)
+    local ids = routedIDs(route(d, S18))
+    assert.is_nil(ids[966])
+    assert.is_nil(ids[967]) -- its follow-up waits too
+  end)
+
+  it("still turns in a complete orange quest", function()
+    local d = dbWith(function(q) q[4730][6] = 22 end) -- 4730 is complete in S18's log
+    assert.is_not_nil(stepOf(route(d, S18), 4730, "turnin"))
+  end)
+
+  it("no step has a quest that is not yellow or green, apart from turn-ins", function()
+    local d = dbWith(function(q)
+      q[8501] = copyRec(q[4763]); q[8501][19] = nil; q[8501][6] = 21
+      q[5061][5] = 19
+    end)
+    for id in pairs(routedIDs(route(d, S18))) do
+      local q = d:quest(id)
+      local fit = ns.Difficulty.color(q.level, S18.level, S18.greyAtOrBelow)
+      assert.is_true(fit == "yellow" or fit == "green" or id == 4730, id .. " is " .. fit)
+    end
   end)
 end)

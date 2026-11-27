@@ -20,7 +20,13 @@
 --   without  list of global names removed from the fake env
 --   questMap "tabs" (QuestMapFrame with QuestsTab and MapLegendTab), "plain"
 --            (QuestMapFrame without native tabs) or nil (no QuestMapFrame)
+--   sideTabTemplate  true: the client has the retail quest log side tab template
+--            (QuestLogTabButtonTemplate, QuestLogTabButtonMixin; see sideTab below),
+--            for native tabs and other addons' tabs built from it; otherwise
+--            CreateFrame ignores that template name
 --   questLog true adds a QuestLogFrame
+--   questFrame true adds QuestFrame (the quest giver dialog, hidden) and GetQuestID, which
+--            returns fake.questID (the quest on the dialog's page)
 --   worldMap true adds WorldMapFrame, a map canvas (spec/helpers/mapcanvas.lua: SetMapID,
 --            AddDataProvider, AcquirePin with the UI/MapPins.xml template; its
 --            acquired pins are WorldMapFrame.pins). CreateFromMixins, Mixin,
@@ -31,6 +37,11 @@
 --            and GetCursorPosition (set fake.cursor = { x, y })
 --   compartment true adds AddonCompartmentFrame (RegisterAddon is recorded in
 --            fake.compartment)
+--   waypointPin  with worldMap: Blizzard's user-waypoint pin, as Blizzard_SharedMapDataProviders
+--            has it: WaypointLocationPinMixin (on MapCanvasPinMixin), the
+--            WaypointLocationPinTemplate and a data provider on the world map that shows one
+--            such pin at the user waypoint when it is on the shown map. Like the client's
+--            provider (USER_WAYPOINT_UPDATED), it refreshes whenever the user waypoint changes.
 --
 -- fake (see the Plan 4b Task 1 brief for the full list):
 --   newFrame(kind, name, parent, template)  the fake CreateFrame
@@ -44,6 +55,11 @@
 --   setState(state)
 --   waypoints, superTracked, superTrackedQuest, openedMaps   map API results
 --                 (UiMapPoint, C_Map.SetUserWaypoint, C_SuperTrack, OpenWorldMap)
+--   userWaypoint  what C_Map.GetUserWaypoint returns: { uiMapID, position = { x, y } } (0-1,
+--                 a Vector2D with GetXY), set by C_Map.SetUserWaypoint or
+--   setUserWaypoint(mapID, x, y)  a waypoint the player places by hand (nil clears it)
+--   cleared       how many times C_Map.ClearUserWaypoint ran (it clears userWaypoint)
+--   waypointProvider  the waypointPin data provider
 --   scrollBoxes   every WowScrollBoxList created (box.rows = {{frame, element, extent}};
 --                 box.retained = the last SetDataProvider's retain-scroll argument)
 --   row(questID)  the Contract C row of that quest in the current rec
@@ -60,6 +76,9 @@
 -- other key reads as nil, so calling a misspelt or missing method raises
 -- "attempt to call method 'X' (a nil value)", as on the client. CreateFrame
 -- rejects unknown frame types.
+-- GetChildren / GetRegions return a frame's child frames / textures and font
+-- strings in creation order (SetParent moves a frame). GetLeft/GetRight/GetTop/GetBottom are stubs (nil): a spec that needs
+-- a position sets them on the widget.
 -- EditBox:SetText fires OnTextChanged(self, false) like the client;
 -- fake.type sets the text the way typing does and fires OnTextChanged(self, true).
 -- ScrollBox lists hand their row frames back in reversed order on every
@@ -199,11 +218,16 @@ function W:IsVisible()
   return true
 end
 
--- EditBox:SetText fires OnTextChanged(self, false), as on the client.
+-- EditBox:SetText fires OnTextChanged(self, false), as on the client. A
+-- button's SetText sets its font string's text too (GetFontString).
 function W:SetText(t)
   self.text = t
+  local fs = rawget(self, "fontString")
+  if fs then fs.text = t end
   if self.kind == "EditBox" then run(self, "OnTextChanged", false) end
 end
+function W:SetFontString(fs) self.fontString = fs end
+function W:GetFontString() return rawget(self, "fontString") end
 function W:GetText() return self.text end
 function W:SetFormattedText(fmt, ...) self.text = string.format(fmt, ...) end
 function W:SetTextColor(r, g, b, a) self.textColor = { r, g, b, a } end
@@ -212,6 +236,22 @@ function W:GetTextColor()
   return c[1], c[2], c[3], c[4]
 end
 function W:SetFontObject(f) self.font = f end
+function W:SetShadowOffset(x, y)
+  self.shadowOffset = { x, y }
+  self.calls[#self.calls + 1] = { "SetShadowOffset", x, y }
+end
+function W:GetShadowOffset()
+  local o = self.shadowOffset or { 0, 0 }
+  return o[1], o[2]
+end
+function W:SetShadowColor(r, g, b, a)
+  self.shadowColor = { r, g, b, a }
+  self.calls[#self.calls + 1] = { "SetShadowColor", r, g, b, a }
+end
+function W:GetShadowColor()
+  local c = self.shadowColor or { 0, 0, 0, 0 }
+  return c[1], c[2], c[3], c[4]
+end
 function W:GetFontObject() return self.font end
 function W:SetWordWrap(v) self.wordWrap = v end
 function W:SetJustifyH(v) self.justifyH = v end
@@ -250,7 +290,38 @@ function W:CreateFontString(name, layer, font)
 end
 
 function W:GetParent() return self.parent end
-function W:SetParent(p) self.parent = p end
+-- Each frame keeps its child frames in creation order (GetChildren).
+local function adopt(parent, child)
+  if not parent then return end
+  local list = rawget(parent, "_children")
+  if not list then list = {}; rawset(parent, "_children", list) end
+  list[#list + 1] = child
+end
+function W:SetParent(p)
+  local old = self.parent and rawget(self.parent, "_children")
+  for i, c in ipairs(old or {}) do
+    if c == self then table.remove(old, i); break end
+  end
+  self.parent = p
+  adopt(p, self)
+end
+local function isRegion(w) return w.kind == "Texture" or w.kind == "FontString" end
+-- The child frames (not textures or font strings), like the client.
+function W:GetChildren()
+  local out = {}
+  for _, c in ipairs(rawget(self, "_children") or {}) do
+    if not isRegion(c) then out[#out + 1] = c end
+  end
+  return unpack(out)
+end
+-- The frame's textures and font strings, in creation order.
+function W:GetRegions()
+  local out = {}
+  for _, c in ipairs(rawget(self, "_children") or {}) do
+    if isRegion(c) then out[#out + 1] = c end
+  end
+  return unpack(out)
+end
 function W:GetName() return self.name end
 function W:GetObjectType() return self.kind end
 function W:RegisterEvent(e) self.events[e] = true end
@@ -262,6 +333,13 @@ function W:GetAtlas() return self.atlas end
 function W:SetTexture(t) self.texture = t; self.atlas = nil end
 function W:GetTexture() return self.texture end
 function W:SetTexCoord(...) self.texCoord = { ... } end
+-- Always the 8 corner values (ULx, ULy, LLx, LLy, URx, URy, LRx, LRy), like the client.
+function W:GetTexCoord()
+  local c = self.texCoord
+  if not c then return 0, 0, 0, 1, 1, 0, 1, 1 end
+  if #c == 4 then return c[1], c[3], c[1], c[4], c[2], c[3], c[2], c[4] end
+  return unpack(c, 1, 8)
+end
 function W:SetVertexColor(r, g, b, a) self.vertex = { r, g, b, a } end
 function W:SetDesaturated(v) self.desaturated = v end
 function W:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
@@ -269,6 +347,7 @@ function W:SetGradient(orientation, minColor, maxColor)
   self.gradient = { orientation, minColor, maxColor }
 end
 function W:SetBlendMode(m) self.blend = m end
+function W:GetBlendMode() return self.blend end
 function W:SetDrawLayer(layer, sub) self.layer, self.sublevel = layer, sub end
 function W:GetDrawLayer() return self.layer, self.sublevel end
 
@@ -306,6 +385,11 @@ function W:SetClipsChildren(v) self.clips = v end
 
 -- Button and bar parts.
 function W:SetHighlightTexture(t, blend) self.highlight = t; self.highlightBlend = blend end
+-- The highlight texture object when one was set as a texture (a file path set
+-- reads as nil here).
+function W:GetHighlightTexture()
+  if type(self.highlight) == "table" then return self.highlight end
+end
 function W:SetNormalTexture(t) self.normal = t end
 function W:SetPushedTexture(t) self.pushed = t end
 function W:SetMinMaxValues(lo, hi) self.min, self.max = lo, hi end
@@ -496,6 +580,47 @@ local function newClient(opts)
 
   local applyTemplates -- forward
 
+  -- opts.sideTabTemplate: the retail quest log side tab (QuestMapFrame.xml,
+  -- QuestLogTabButtonTemplate with QuestLogTabButtonMixin): a 43 x 55 tab with
+  -- the questlog-tab-side background, an Icon, a hidden SelectedTexture (the gold
+  -- select glow) and a hover glow on the HIGHLIGHT layer. The mixin's mouse-up
+  -- switches the quest log's display mode; its SetChecked shows the glow and
+  -- swaps the icon atlas.
+  local SIDE_TAB = "QuestLogTabButtonTemplate"
+  local sideTabMixin = {}
+  function sideTabMixin:OnMouseDown() self.Icon:AdjustPointsOffset(1, -1) end
+  function sideTabMixin:OnMouseUp(button, upInside)
+    self.Icon:AdjustPointsOffset(-1, 1)
+    if button == "LeftButton" and upInside then self:GetParent():SetDisplayMode(self.displayMode) end
+  end
+  function sideTabMixin:OnEnter()
+    fake.tooltip:SetOwner(self, "ANCHOR_RIGHT", -4, -4)
+    fake.tooltip:SetText(self.tooltipText)
+    fake.tooltip:Show()
+  end
+  function sideTabMixin:OnLeave() fake.tooltip:Hide() end
+  function sideTabMixin:SetChecked(checked)
+    self.Icon:SetAtlas(checked and self.activeAtlas or self.inactiveAtlas)
+    self.SelectedTexture:SetShown(checked)
+  end
+  local function sideTab(w)
+    for k, v in pairs(sideTabMixin) do w[k] = v end
+    w.width, w.height = 43, 55
+    w.Background = w:CreateTexture(nil, "BACKGROUND")
+    w.Background:SetAtlas("questlog-tab-side")
+    w.Background:SetPoint("CENTER")
+    w.Icon = w:CreateTexture(nil, "ARTWORK")
+    w.Icon:SetPoint("CENTER", w, "CENTER", -2, 0)
+    w.SelectedTexture = w:CreateTexture(nil, "OVERLAY")
+    w.SelectedTexture:SetAtlas("questlog-tab-side-glow-select")
+    w.SelectedTexture:SetPoint("CENTER")
+    w.SelectedTexture.shown = false
+    local hover = w:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAtlas("questlog-tab-side-glow-hover")
+    hover:SetPoint("CENTER")
+    for _, s in ipairs({ "OnMouseDown", "OnMouseUp", "OnEnter", "OnLeave" }) do w.scripts[s] = w[s] end
+  end
+
   local function newWidget(kind, name, parent, template)
     local mt = assert(KIND_MT[kind], "the fake client has no widget type " .. tostring(kind))
     local w = setmetatable({
@@ -504,6 +629,7 @@ local function newClient(opts)
       _new = newWidget,
     }, mt)
     fake.widgets[#fake.widgets + 1] = w
+    adopt(parent, w)
     if name and env then env[name] = w end
     if template then applyTemplates(w, template) end
     return w
@@ -555,6 +681,9 @@ local function newClient(opts)
         w.PortraitContainer.portrait = w.PortraitContainer:CreateTexture(nil, "OVERLAY")
         w.SetTitle = function(self, title) self.title = title end
         w.SetPortraitToUnit = function(self, unit) self.portraitUnit = unit end
+      elseif t == "UIPanelButtonTemplate" then
+        -- the template's ButtonText (GameFontNormal) is the button's font string
+        w:SetFontString(w:CreateFontString(nil, "ARTWORK", "GameFontNormal"))
       elseif t == "UIPanelCloseButton" then
         w.scripts.OnClick = function(self) self:GetParent():Hide() end
       elseif t == "UICheckButtonTemplate" then
@@ -569,6 +698,8 @@ local function newClient(opts)
         w.SetDataProvider = boxSetDataProvider
         fake.scrollBoxes[#fake.scrollBoxes + 1] = w
         w.GetDataProvider = function(self) return self.dataProvider end
+      elseif t == SIDE_TAB and opts.sideTabTemplate then
+        sideTab(w)
       end
     end
   end
@@ -643,6 +774,7 @@ local function newClient(opts)
       return { atlas = atlas, width = 64, height = 64 }
     end,
   }
+  if opts.sideTabTemplate then g.QuestLogTabButtonMixin = sideTabMixin end
   g.CreateColor = function(r, g_, b, a)
     local c = { r = r, g = g_, b = b, a = a }
     function c:GetRGBA() return self.r, self.g, self.b, self.a end
@@ -684,7 +816,33 @@ local function newClient(opts)
   g.UiMapPoint = {
     CreateFromCoordinates = function(m, x, y) return { uiMapID = m, x = x, y = y } end,
   }
-  g.C_Map = { SetUserWaypoint = function(p) fake.waypoints[#fake.waypoints + 1] = p end }
+  local function vector(x, y)
+    local v = { x = x, y = y }
+    function v:GetXY() return self.x, self.y end
+    return v
+  end
+  -- The user waypoint changed: Blizzard's pin provider (opts.waypointPin) redraws its pin.
+  local function waypointChanged()
+    local p = fake.waypointProvider
+    if p and p:GetMap() then p:RefreshAllData() end
+  end
+  function fake.setUserWaypoint(mapID, x, y)
+    fake.userWaypoint = mapID and { uiMapID = mapID, position = vector(x, y) } or nil
+    waypointChanged()
+  end
+  g.C_Map = {
+    SetUserWaypoint = function(p)
+      fake.waypoints[#fake.waypoints + 1] = p
+      fake.userWaypoint = { uiMapID = p.uiMapID, position = vector(p.x, p.y) }
+      waypointChanged()
+    end,
+    GetUserWaypoint = function() return fake.userWaypoint end,
+    ClearUserWaypoint = function()
+      fake.cleared = (fake.cleared or 0) + 1
+      fake.userWaypoint = nil
+      waypointChanged()
+    end,
+  }
   if opts.art == "tiles" then
     g.C_Map.GetMapArtLayers = function()
       return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256 } }
@@ -701,6 +859,21 @@ local function newClient(opts)
     SetSuperTrackedQuestID = function(id) fake.superTrackedQuest = id end,
   }
   g.OpenWorldMap = function(mapID) fake.openedMaps[#fake.openedMaps + 1] = mapID end
+  -- hooksecurefunc([table,] name, hook): the original runs first, then the hook with the same
+  -- arguments; the original's results are returned. A missing function is an error.
+  g.hooksecurefunc = function(a, b, c)
+    local tbl, name, hook = a, b, c
+    if type(a) == "string" then tbl, name, hook = env, a, b end
+    local orig = tbl[name]
+    if type(orig) ~= "function" or type(hook) ~= "function" then
+      error('Usage: hooksecurefunc([table,] "functionName", hookfunc)', 2)
+    end
+    tbl[name] = function(...)
+      local r = packArgs(orig(...))
+      hook(...)
+      return unpack(r, 1, r.n)
+    end
+  end
   if opts.minimap then
     local mm = newWidget("Frame", "Minimap", g.UIParent)
     mm:SetSize(140, 140)
@@ -795,7 +968,9 @@ local function newClient(opts)
     return nil
   end }
   -- The quest log by questID: fake.setLog(questID, { choices = {{name, texture,
-  -- count, quality, isUsable, itemID}}, rewards = {...}, money = n, xp = n }).
+  -- count, quality, isUsable, itemID}}, rewards = {...}, money = n, xp = n,
+  -- objectives = {{text, type, finished, numFulfilled, numRequired}} (what
+  -- C_QuestLog.GetQuestObjectives returns; nil when absent) }).
   -- Installed on demand: a bare C_QuestLog would change the Adapter's reads.
   function fake.setLog(questID, rec)
     local log = fake.log or {}
@@ -803,6 +978,7 @@ local function newClient(opts)
     log[questID] = rec
     env.C_QuestLog = env.C_QuestLog or {}
     env.C_QuestLog.GetLogIndexForQuestID = function(id) return log[id] and 1 or nil end
+    env.C_QuestLog.GetQuestObjectives = function(id) return log[id] and log[id].objectives end
     env.GetNumQuestLogChoices = function(id, isChoice)
       assert(id, "the selected-quest form errors in this build")
       return #(log[id] and log[id].choices or {})
@@ -831,7 +1007,11 @@ local function newClient(opts)
     fake.menu = m
     local root = {}
     function root:CreateTitle(t) m.title = t end
-    function root:CreateButton(label, fn) m.buttons[#m.buttons + 1] = { label = label, fn = fn } end
+    function root:CreateButton(label, fn)
+      local entry = { label = label, fn = fn }
+      m.buttons[#m.buttons + 1] = entry
+      return { SetEnabled = function(_, v) entry.enabled = v and true or false end }
+    end
     function root:CreateDivider() end
     gen(owner, root)
   end }
@@ -860,16 +1040,36 @@ function ui.load(opts)
   for _, k in ipairs(opts.without or {}) do env[k] = nil end
   fake.bind(env)
   env._G = env
+  local WAYPOINT_TEMPLATE = "WaypointLocationPinTemplate"
   if fake.worldMap then
+    local templates = { ui.pinTemplate() }
+    if opts.waypointPin then
+      templates[2] = { name = WAYPOINT_TEMPLATE, frameType = "Frame", mixin = "WaypointLocationPinMixin",
+        scripts = {}, enableMouse = false }
+    end
     mapcanvas.attach(fake.worldMap, {
       env = env,
-      templates = { ui.pinTemplate() },
+      templates = templates,
       newFrame = function(frameType, parent, name, t)
         local f = fake.newFrame(frameType, nil, parent, name)
         if t.size then f.width, f.height = t.size[1], t.size[2] end
         return f
       end,
     })
+    if opts.waypointPin then
+      env.WaypointLocationPinMixin = env.CreateFromMixins(env.MapCanvasPinMixin)
+      local provider = env.CreateFromMixins(env.MapCanvasDataProviderMixin)
+      function provider:RemoveAllData() self:GetMap():RemoveAllPinsByTemplate(WAYPOINT_TEMPLATE) end
+      function provider:RefreshAllData()
+        self:RemoveAllData()
+        local map, wp = self:GetMap(), fake.userWaypoint
+        if wp and wp.uiMapID == map:GetMapID() then
+          map:AcquirePin(WAYPOINT_TEMPLATE):SetPosition(wp.position.x, wp.position.y)
+        end
+      end
+      fake.worldMap:AddDataProvider(provider)
+      fake.waypointProvider = provider
+    end
   end
   env.UIParent = fake.globals.UIParent
   env.GameTooltip = fake.tooltip
@@ -882,6 +1082,11 @@ function ui.load(opts)
   end
   if opts.questLog then
     env.QuestLogFrame = fake.newFrame("Frame", "QuestLogFrame", env.UIParent)
+  end
+  if opts.questFrame then
+    env.QuestFrame = fake.newFrame("Frame", "QuestFrame", env.UIParent)
+    env.QuestFrame.shown = false
+    env.GetQuestID = function() return fake.questID end
   end
   if opts.compartment then
     fake.compartment = {}

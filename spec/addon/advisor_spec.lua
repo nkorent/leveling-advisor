@@ -131,8 +131,8 @@ describe("Advisor", function()
       assert.same({
         "Zones:",
         "  1. Darkshore (10–20) — 6 quests, ~7030 XP — You are here — finish before you leave",
-        "  2. Ashenvale (18–30) — 4 quests, ~5050 XP — Next zone — walk south",
-        "  3. Loch Modan (10–20) — 1 quest, ~900 XP — Alternative — boat from Auberdine",
+        "  2. Ashenvale (18–30) — 3 quests, ~4000 XP — Next zone — walk south",
+        "  3. Loch Modan (10–20) — 1 quest, ~900 XP — Catch up — 1 quest you skipped at your level",
         "Ready to Turn In (1):",
         "  [17] Beached Sea Creature — 134 yd (ready)",
         "Right Here (2):",
@@ -144,6 +144,8 @@ describe("Advisor", function()
         "  [19] Bathran's Hair — 5366 yd",
         "  [20] The Ancient Statuette — 5344 yd",
         "  [20] Riverglades Survey — 5395 yd",
+        "Later — too high for now (1):", -- level fit: 991 is orange at 18
+        "  [21] Raene's Cleansing — 5366 yd",
       }, out)
     end)
 
@@ -163,7 +165,7 @@ describe("Advisor", function()
       local rec = {
         zones = {},
         dungeon = { name = "Blackfathom Deeps", minLevel = 22, maxLevel = 28,
-          reason = "Best at 21 — three of its quests start on your way" },
+          reason = "Best at 22 — three of its quests start on your way" },
         sections = { { key = "x", title = "Right Here", rows = {
           { questID = 1, name = "A", level = 18, state = "available", yards = nil },
           { questID = 2, name = "B", level = 19, state = "progress", soon = true, yards = 51.4 },
@@ -171,7 +173,7 @@ describe("Advisor", function()
         } } },
       }
       assert.same({
-        "Dungeon: Blackfathom Deeps (22–28) — Best at 21 — three of its quests start on your way",
+        "Dungeon: Blackfathom Deeps (22–28) — Best at 22 — three of its quests start on your way",
         "Right Here (3):",
         "  [18] A",
         "  [19] B — 51 yd (soon)",

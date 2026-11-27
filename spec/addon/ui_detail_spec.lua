@@ -400,6 +400,9 @@ describe("quest detail page", function()
         "Leaders of the Fang" }, texts(rows, "name"))
       assert.is_true(rows[1].tag:IsShown())
       assert.equal("START HERE", rows[1].tag:GetText())
+      -- ink text on the parchment has no drop shadow (the tag's red is dark ink)
+      assert.same({ 0, 0 }, { rows[1].tag:GetShadowOffset() })
+      assert.same({ 0, 0 }, { rows[1].sub:GetShadowOffset() })
       for i = 2, 5 do assert.is_false(rows[i].tag:IsShown()) end
       assert.is_true(rows[1].pin:IsShown())
       for i = 2, 5 do assert.is_false(rows[i].pin:IsShown()) end

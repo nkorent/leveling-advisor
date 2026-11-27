@@ -1,6 +1,9 @@
 local ui = require("spec.helpers.ui")
 
 local PREFIX = "|cffffd100Leveling Advisor:|r "
+-- The guide (on by default) sets a waypoint on every result: off where a spec
+-- counts the waypoints Nav sets.
+local NO_GUIDE = { settings = { guide = false } }
 
 local function pinsFor(ns, mapID) return ns.MapPins.model(mapID) end
 
@@ -33,8 +36,9 @@ describe("Nav.placeFor", function()
 end)
 
 describe("Nav.showQuest", function()
-  it("sets the waypoint, a focus pin, closes the book and opens the map", function()
+  it("sets the waypoint (no focus pin of ours), closes the book and opens the map", function()
     local ns, _, fake, out = ui.load({ state = "S18" })
+    ns.Settings.set("pinsAll", false)
     ns.UI.open()
     assert.is_true(ns.UI.Nav.showQuest(4763))
     assert.same({ uiMapID = 1439, x = 0.374, y = 0.401 }, fake.waypoints[1])
@@ -42,10 +46,38 @@ describe("Nav.showQuest", function()
     assert.same({ 1439 }, fake.openedMaps)
     assert.is_false(ns.UI.isShown())
     assert.equal(PREFIX .. "Waypoint set: The Blackwood Corrupted (Darkshore 37.4, 40.1)", out[#out])
+    -- the game's super-track pinpoint is the one marker
+    assert.equal(0, #pinsFor(ns, 1439))
+  end)
+
+  it("adds the focus pin when the waypoint fails", function()
+    local ns, env, fake, out = ui.load({ state = "S18" })
+    ns.Settings.set("pinsAll", false)
+    env.C_SuperTrack.SetSuperTrackedUserWaypoint = function() error("blocked") end
+    assert.is_true(ns.UI.Nav.showQuest(4763))
+    assert.equal(PREFIX .. "Waypoints are not available on this client.", out[#out])
+    local pins = pinsFor(ns, 1439)
+    assert.equal(1, #pins)
+    assert.same({ 4763 }, questIDs(pins[1]))
+    assert.same({ 1439 }, fake.openedMaps)
+    assert.same({}, env.errors)
+  end)
+
+  it("a working waypoint clears an earlier focus pin", function()
+    local ns, env = ui.load({ state = "S18" })
+    ns.Settings.set("pinsAll", false)
+    local point = env.UiMapPoint
+    env.UiMapPoint = nil
+    ns.UI.Nav.showQuest(1010) -- Ashenvale giver, no waypoint: focus pin
+    assert.equal(1, #pinsFor(ns, 1440))
+    env.UiMapPoint = point
+    ns.UI.Nav.showQuest(4763)
+    assert.equal(0, #pinsFor(ns, 1440))
+    assert.equal(0, #pinsFor(ns, 1439))
   end)
 
   it("super-tracks an in-progress quest, with no user waypoint", function()
-    local ns, env, fake, out = ui.load({ state = "S18" })
+    local ns, env, fake, out = ui.load({ state = "S18", chardb = NO_GUIDE })
     assert.is_true(ns.UI.Nav.showQuest(966))
     assert.equal(966, fake.superTrackedQuest)
     assert.same({}, fake.waypoints)
@@ -55,7 +87,7 @@ describe("Nav.showQuest", function()
   end)
 
   it("falls back to a waypoint without the quest super-track API", function()
-    local ns, env, fake = ui.load({ state = "S18" })
+    local ns, env, fake = ui.load({ state = "S18", chardb = NO_GUIDE })
     env.C_SuperTrack.SetSuperTrackedQuestID = nil
     assert.is_true(ns.UI.Nav.showQuest(966))
     assert.same({ uiMapID = 1439, x = 0.56, y = 0.26 }, fake.waypoints[1])
@@ -63,7 +95,8 @@ describe("Nav.showQuest", function()
   end)
 
   it("says when no position is known", function()
-    local ns, _, fake, out = ui.load({ state = "S18", patch = function(d) d.quests[7007][11] = nil end })
+    local ns, _, fake, out = ui.load({ state = "S18", chardb = NO_GUIDE,
+      patch = function(d) d.quests[7007][11] = nil end })
     assert.is_false(ns.UI.Nav.showQuest(7007))
     assert.equal(PREFIX .. "No map position known for Broken Record.", out[#out])
     assert.same({}, fake.openedMaps)
@@ -71,7 +104,7 @@ describe("Nav.showQuest", function()
   end)
 
   it("in combat the waypoint is set now and the map opens once after the fight", function()
-    local ns, _, fake, out = ui.load({ state = "S18" })
+    local ns, _, fake, out = ui.load({ state = "S18", chardb = NO_GUIDE })
     fake.combat(true)
     ns.UI.Nav.showQuest(1010)
     ns.UI.Nav.showQuest(4763)
@@ -109,9 +142,12 @@ describe("Nav.showQuest", function()
   end)
 end)
 
-describe("focus pin", function()
+-- The focus pin is the fallback for a client without working waypoints.
+describe("focus pin (no waypoints)", function()
+  local NO_WAYPOINT = { "UiMapPoint" }
+
   it("shows with pinsAll off and only on its own map", function()
-    local ns = ui.load({ state = "S18" })
+    local ns = ui.load({ state = "S18", without = NO_WAYPOINT })
     ns.Settings.set("pinsAll", false)
     ns.UI.Nav.showQuest(1010) -- Ashenvale giver
     local a, d = pinsFor(ns, 1440), pinsFor(ns, 1439)
@@ -123,7 +159,7 @@ describe("focus pin", function()
   end)
 
   it("does not duplicate a recommended quest's pin", function()
-    local ns = ui.load({ state = "S18" })
+    local ns = ui.load({ state = "S18", without = NO_WAYPOINT })
     ns.Settings.set("pinsAll", true)
     local before = #pinsFor(ns, 1439)
     ns.UI.Nav.showQuest(4763)
@@ -137,7 +173,7 @@ describe("focus pin", function()
   end)
 
   it("count and describe read the model, focus included", function()
-    local ns, env = ui.load({ state = "S18", worldMap = true })
+    local ns, env = ui.load({ state = "S18", worldMap = true, without = NO_WAYPOINT })
     ns.Settings.set("pinsAll", false)
     ns.UI.Nav.showQuest(1010)
     env.WorldMapFrame:SetMapID(1440)
@@ -148,7 +184,7 @@ describe("focus pin", function()
   end)
 
   it("is dropped once its quest is completed, or a pickup is in the log (F26)", function()
-    local ns = ui.load({ state = "S18" })
+    local ns = ui.load({ state = "S18", without = NO_WAYPOINT })
     ns.Settings.set("pinsAll", false)
     ns.UI.Nav.showQuest(1010)
     assert.equal(1, #pinsFor(ns, 1440))
@@ -163,7 +199,7 @@ describe("focus pin", function()
   end)
 
   it("a turn-in focus stays while its quest is in the log", function()
-    local ns = ui.load({ state = "S18" })
+    local ns = ui.load({ state = "S18", without = NO_WAYPOINT })
     ns.Settings.set("pinsAll", false)
     ns.UI.Nav.showQuest(4730) -- complete in the log
     local pins = pinsFor(ns, 1439)
@@ -173,16 +209,26 @@ describe("focus pin", function()
 end)
 
 describe("Nav.showPlace", function()
-  it("sets a waypoint and focus pin for a bare place", function()
-    local ns, _, fake, out = ui.load({ state = "S18" })
+  it("sets a waypoint for a bare place and no focus pin", function()
+    local ns, _, fake, out = ui.load({ state = "S18", chardb = NO_GUIDE })
     ns.Settings.set("pinsAll", false)
     ns.UI.open()
     assert.is_true(ns.UI.Nav.showPlace({ mapID = 1440, x = 30, y = 40 }, "Somewhere", "turnin"))
     assert.same({ uiMapID = 1440, x = 0.3, y = 0.4 }, fake.waypoints[1])
     assert.same({ 1440 }, fake.openedMaps)
     assert.is_false(ns.UI.isShown())
-    assert.equal("turnin", pinsFor(ns, 1440)[1].kind)
+    assert.equal(0, #pinsFor(ns, 1440))
     assert.equal(PREFIX .. "Waypoint set: Somewhere (Ashenvale 30.0, 40.0)", out[#out])
+  end)
+
+  it("sets a focus pin when the waypoint fails", function()
+    local ns, env, fake = ui.load({ state = "S18" })
+    ns.Settings.set("pinsAll", false)
+    env.C_Map.SetUserWaypoint = function() error("blocked") end
+    assert.is_true(ns.UI.Nav.showPlace({ mapID = 1440, x = 30, y = 40 }, "Somewhere", "turnin"))
+    assert.equal("turnin", pinsFor(ns, 1440)[1].kind)
+    assert.same({ 1440 }, fake.openedMaps)
+    assert.same({}, env.errors)
   end)
 end)
 

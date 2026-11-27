@@ -48,10 +48,31 @@ end
 describe("Settings", function()
   it("returns defaults when unset", function()
     local ns = setup()
-    for _, k in ipairs({ "elite", "dungeons", "pinsAll", "recorder", "minimap" }) do
+    for _, k in ipairs({ "elite", "dungeons", "pinsAll", "recorder", "minimap", "giverRibbon", "guide" }) do
       assert.is_true(ns.Settings.get(k))
     end
-    assert.same({ elite = true, dungeons = true, pinsAll = true, recorder = true, minimap = true }, ns.Settings.DEFAULTS)
+    assert.same({ elite = true, dungeons = true, pinsAll = true, recorder = true, minimap = true,
+      giverRibbon = true, guide = true }, ns.Settings.DEFAULTS)
+  end)
+
+  it("keeps the guide per character, in a table made on the first write", function()
+    local ns = setup()
+    local seen = {}
+    ns.Settings.onChange(function(k, v) seen[#seen + 1] = { k, v } end)
+    ns.Settings.set("guide", false) -- no character saved variables yet: nothing happens
+    assert.same({}, seen)
+    assert.is_true(ns.Settings.get("guide"))
+    ns.chardb = { ignored = {}, collapsed = {} }
+    assert.is_true(ns.Settings.get("guide"))
+    assert.is_nil(ns.chardb.settings)
+    ns.Settings.set("guide", false)
+    assert.same({ { "guide", false } }, seen)
+    assert.is_false(ns.Settings.get("guide"))
+    assert.same({ guide = false }, ns.chardb.settings)
+    assert.is_nil(ns.db.settings.guide)
+    ns.Settings.set("elite", false)
+    assert.is_false(ns.db.settings.elite)
+    assert.is_nil(ns.chardb.settings.elite)
   end)
 
   it("set then get, including false", function()
@@ -85,10 +106,10 @@ describe("Settings", function()
 
   it("aboutLine with and without data meta", function()
     local ns = setup()
-    assert.equals("Leveling Advisor 0.2.0 — GPL-3.0 — " .. SOURCES .. " Game data not built.",
+    assert.equals("Leveling Advisor 0.3.0 — GPL-3.0 — " .. SOURCES .. " Game data not built.",
       ns.Settings.aboutLine())
     ns.Data = { meta = { gameData = "1.60.1" } }
-    assert.equals("Leveling Advisor 0.2.0 — GPL-3.0 — " .. SOURCES .. " Game data 1.60.1.",
+    assert.equals("Leveling Advisor 0.3.0 — GPL-3.0 — " .. SOURCES .. " Game data 1.60.1.",
       ns.Settings.aboutLine())
   end)
 
@@ -110,9 +131,11 @@ describe("Settings", function()
       "Show pins for all recommended quest givers",
       "Record quest data (local only)",
       "Show minimap button",
+      "Mark recommended quests at quest givers",
+      "Guide: set a waypoint to the next step automatically",
     }
 
-    it("uses Settings when present and builds five labelled checkboxes", function()
+    it("uses Settings when present and builds seven labelled checkboxes", function()
       local registered = {}
       local cat = { GetID = function() return 42 end }
       local ns, _, _, created = setup({
@@ -127,7 +150,7 @@ describe("Settings", function()
       assert.equals(cat, registered.cat)
       assert.equals("Leveling Advisor", registered.name)
       local boxes = checkboxes(created)
-      assert.equals(5, #boxes)
+      assert.equals(7, #boxes)
       for i, b in ipairs(boxes) do assert.equals(LABELS[i], b.Text.text) end
       -- OnShow reflects settings
       registered.frame.scripts.OnShow(registered.frame)

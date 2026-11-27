@@ -1,6 +1,6 @@
 local addonName, ns = ...
 
-ns.VERSION = "0.2.0"
+ns.VERSION = "0.3.0"
 
 ---------------------------------------------------------------------------
 -- Events: one shared frame, several pcall-protected handlers per event.

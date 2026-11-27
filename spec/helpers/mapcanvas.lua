@@ -31,6 +31,11 @@
 --                           pin:OnAcquired(...).
 --   RemoveAllPinsByTemplate(name)  hides each pin of that template, calls pin:OnReleased()
 --                           and returns it to the pool
+--   EnumeratePinsByTemplate(name)  the template pool's EnumerateActive(): pairs over the
+--                           active set, so the KEY is the pin (value true), as on the client
+--   EnumerateAllPins()      an iterator over every active pin of every pool (one value: the pin)
+--   map.pinPools            template name -> pool: { activeObjects = { [pin] = true } } with
+--                           EnumerateActive() and GetNumActive(), as the client's frame pools
 --   map.pins                the acquired pins in acquire order (always the same table)
 local M = {}
 
@@ -110,7 +115,7 @@ function M.attach(map, opts)
   map.mapID = opts.mapID
   map.providers = map.providers or {}
   map.pins = map.pins or {}
-  map.pools = {}
+  map.pinPools = {}
   local templates = {}
   for _, t in ipairs(opts.templates or {}) do templates[t.name] = t end
 
@@ -148,11 +153,26 @@ function M.attach(map, opts)
     return pin
   end
 
+  local function poolOf(self, name)
+    local pool = self.pinPools[name]
+    if not pool then
+      pool = { activeObjects = {}, free = {} }
+      function pool:EnumerateActive() return pairs(self.activeObjects) end
+      function pool:GetNumActive()
+        local n = 0
+        for _ in pairs(self.activeObjects) do n = n + 1 end
+        return n
+      end
+      self.pinPools[name] = pool
+    end
+    return pool
+  end
+
   function map:AcquirePin(name, ...)
     local t = assert(templates[name], "unknown pin template " .. tostring(name))
-    local pool = self.pools[name] or {}
-    self.pools[name] = pool
-    local pin = table.remove(pool) or newPin(t)
+    local pool = poolOf(self, name)
+    local pin = table.remove(pool.free) or newPin(t)
+    pool.activeObjects[pin] = true
     pin.pinTemplate, pin.owningMap = name, self
     pin:Show()
     pin:OnAcquired(...)
@@ -169,9 +189,9 @@ function M.attach(map, opts)
         pin:Hide()
         pin:OnReleased()
         pin.pinTemplate, pin.owningMap = nil, nil
-        local pool = self.pools[name] or {}
-        self.pools[name] = pool
-        pool[#pool + 1] = pin
+        local pool = poolOf(self, name)
+        pool.activeObjects[pin] = nil
+        pool.free[#pool.free + 1] = pin
       else
         i = i + 1
       end
@@ -179,9 +199,19 @@ function M.attach(map, opts)
   end
 
   function map:EnumeratePinsByTemplate(name)
+    local pool = self.pinPools[name]
+    if not pool then return function() end end
+    return pool:EnumerateActive()
+  end
+
+  function map:EnumerateAllPins()
     local list = {}
-    for _, p in ipairs(self.pins) do if p.pinTemplate == name then list[#list + 1] = p end end
-    return ipairs(list)
+    for _, p in ipairs(self.pins) do list[#list + 1] = p end
+    local i = 0
+    return function()
+      i = i + 1
+      return list[i]
+    end
   end
 
   return map

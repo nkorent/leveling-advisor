@@ -5,16 +5,18 @@ Questie's entity data since Questie v12. Its Forever flavor is read here: the ra
 (Era data with coordinates converted to Forever map frames), then the Static Correction layers in
 the order docs/forever.md gives (a later layer overrides an earlier one):
 
-  legacy           src/corrections/Forever/legacy/classic{Quest,NPC,Object}Fixes.lua   Load()
-  generated        src/corrections/Forever/generated/foreverBase{Quest,Npc,Object}.lua
-  traces           src/corrections/Forever/traces/forever{Quest,Npc,Object}Traces.lua
+  legacy           src/corrections/Forever/legacy/classic{Quest,NPC,Object,Item}Fixes.lua   Load()
+  generated        src/corrections/Forever/generated/foreverBase{Quest,Npc,Object,Item}.lua
+  traces           src/corrections/Forever/traces/forever{Quest,Npc,Object,Item}Traces.lua
   relation-traces  src/corrections/Forever/traces/foreverQuestRelationTraces.lua
-  authored         src/corrections/Forever/forever{Quest,NPC,Object}Fixes.lua         Load()
+  authored         src/corrections/Forever/forever{Quest,NPC,Object,Item}Fixes.lua         Load()
 
 then the Dynamic Corrections (legacy LoadFactionFixes, then LoadDynamic) evaluated once for
 Alliance and once for Horde, the Questie master quest blacklist evaluated for a Forever client,
-areaId -> uiMapID for NPC and object spawns, and the quest XP support tables. The item, quest
-reputation and item-start providers are not read (not output fields).
+areaId -> uiMapID for NPC and object spawns, and the quest XP support tables. Items are read for
+their name and drop sources only (npcDrops, objectDrops: the "where it drops" of an item objective,
+Contract A field 26). The quest reputation and item-start providers are not read (not output fields).
+A data file's key table may lack only trailing keys of its meta (the item data predates teachesSpell).
 
 Only data, correction, enum and support files are evaluated, never QuestieDB's or Questie's code
 or tools. Raw data strings run in an empty Lua environment; everything else runs in the sandbox of
@@ -60,30 +62,36 @@ from pipeline.questie import (_PROXY, _apply_blacklist, _blank, _eval_table, _ex
                               _extract_table, _fix_fields, _friendly, _new_sandbox, _read_keys,
                               _union_conflict)
 
-DATATYPES = ("Quest", "Npc", "Object")
+DATATYPES = ("Quest", "Npc", "Object", "Item")
 # datatype: (raw data file, its key table, its data string)
 DATA_FILES = {
     "Quest": ("data/Forever/foreverQuestDB.lua", "questKeys", "questData"),
     "Npc": ("data/Forever/foreverNpcDB.lua", "npcKeys", "npcData"),
     "Object": ("data/Forever/foreverObjectDB.lua", "objectKeys", "objectData"),
+    "Item": ("data/Forever/foreverItemDB.lua", "itemKeys", "itemData"),
 }
-META_FILES = {"Quest": "src/meta/questMeta.lua", "Npc": "src/meta/npcMeta.lua", "Object": "src/meta/objectMeta.lua"}
+META_FILES = {"Quest": "src/meta/questMeta.lua", "Npc": "src/meta/npcMeta.lua", "Object": "src/meta/objectMeta.lua",
+              "Item": "src/meta/itemMeta.lua"}
 _F = "src/corrections/Forever"
 # Static Correction layers in application order: (layer, {datatype: (file, module)}).
 STATIC_LAYERS = (
     ("legacy", {"Quest": (f"{_F}/legacy/classicQuestFixes.lua", "QuestieQuestFixes"),
                 "Npc": (f"{_F}/legacy/classicNPCFixes.lua", "QuestieNPCFixes"),
-                "Object": (f"{_F}/legacy/classicObjectFixes.lua", "QuestieObjectFixes")}),
+                "Object": (f"{_F}/legacy/classicObjectFixes.lua", "QuestieObjectFixes"),
+                "Item": (f"{_F}/legacy/classicItemFixes.lua", "QuestieItemFixes")}),
     ("generated", {"Quest": (f"{_F}/generated/foreverBaseQuest.lua", "ForeverBaseQuest"),
                    "Npc": (f"{_F}/generated/foreverBaseNpc.lua", "ForeverBaseNpc"),
-                   "Object": (f"{_F}/generated/foreverBaseObject.lua", "ForeverBaseObject")}),
+                   "Object": (f"{_F}/generated/foreverBaseObject.lua", "ForeverBaseObject"),
+                   "Item": (f"{_F}/generated/foreverBaseItem.lua", "ForeverBaseItem")}),
     ("traces", {"Quest": (f"{_F}/traces/foreverQuestTraces.lua", "ForeverQuestTraces"),
                 "Npc": (f"{_F}/traces/foreverNpcTraces.lua", "ForeverNpcTraces"),
-                "Object": (f"{_F}/traces/foreverObjectTraces.lua", "ForeverObjectTraces")}),
+                "Object": (f"{_F}/traces/foreverObjectTraces.lua", "ForeverObjectTraces"),
+                "Item": (f"{_F}/traces/foreverItemTraces.lua", "ForeverItemTraces")}),
     ("relation-traces", {"Quest": (f"{_F}/traces/foreverQuestRelationTraces.lua", "ForeverQuestRelationTraces")}),
     ("authored", {"Quest": (f"{_F}/foreverQuestFixes.lua", "ForeverQuestFixes"),
                   "Npc": (f"{_F}/foreverNPCFixes.lua", "ForeverNpcFixes"),
-                  "Object": (f"{_F}/foreverObjectFixes.lua", "ForeverObjectFixes")}),
+                  "Object": (f"{_F}/foreverObjectFixes.lua", "ForeverObjectFixes"),
+                  "Item": (f"{_F}/foreverItemFixes.lua", "ForeverItemFixes")}),
 )
 FOREVER_LAYERS = frozenset({"generated", "traces", "relation-traces", "authored"})
 # Dynamic providers in application order: (static layer whose module defines it, function).
@@ -107,6 +115,7 @@ FIELDS = {
               "nextQuestInChain"),
     "Npc": ("name", "minLevel", "spawns", "friendlyToFaction"),
     "Object": ("name", "spawns"),
+    "Item": ("name", "npcDrops", "objectDrops"),     # Task 8: an item objective's name and sources
 }
 UNIONABLE = ("startedBy", "finishedBy")
 # Quest fields the merge does not gate on: a faction disagreement there just keeps the static value.
@@ -132,7 +141,11 @@ class QuestieDBData:
     npcs: {id: {"name", "friendly": "A" | "H" | "AH" | None, "level": minLevel, "faction_known"}};
     friendly None is "hostile to both" when faction_known (Era data, or a layer set it) and
     "unknown" otherwise (an NPC a Forever layer created without friendlyToFaction).
-    objects: {id: {"name"}}. npc_spawns / object_spawns: {id: [{"map_id", "x", "y"}, ...]}
+    objects: {id: {"name"}}. items: {id: {"name", "npc_drops": [npc id, ...], "object_drops": [object
+    id, ...]}} (empty lists when none). Each quest also has "objectives": its objective rows in group
+    order, [{"group": 1 creature | 2 object | 3 item | 4 reputation | 5 kill credit | 6 spell, "id",
+    "text": its own objective text or None}, ...] (group 5 adds "ids": every NPC that gives the credit,
+    "id" is the base NPC; group 4's id is the faction). npc_spawns / object_spawns: {id: [{"map_id", "x", "y"}, ...]}
     (uiMapIDs, 0-100 Forever map coordinates; entities without a usable spawn are absent).
     xp: {quest id: (level, xp)}. stats: counts per layer and the lists described in the module doc.
     hidden_ids: every quest id the blacklist hides for a Forever client, including ids QuestieDB does
@@ -145,6 +158,7 @@ class QuestieDBData:
     quests: dict = field(default_factory=dict)
     npcs: dict = field(default_factory=dict)
     objects: dict = field(default_factory=dict)
+    items: dict = field(default_factory=dict)
     npc_spawns: dict = field(default_factory=dict)
     object_spawns: dict = field(default_factory=dict)
     xp: dict = field(default_factory=dict)
@@ -471,7 +485,10 @@ class _Loader:
         rel, key_table, _data = DATA_FILES[dt]
         keys = _read_keys(self.root / rel, key_table)
         meta = self.meta[dt] = _read_meta(self.root, dt)
-        if keys != meta.keys:
+        # the data's key table may lack only trailing meta keys (fields added after the data was written)
+        top = max(keys.values(), default=0)
+        missing = {n: i for n, i in meta.keys.items() if n not in keys}
+        if not keys.items() <= meta.keys.items() or any(i <= top for i in missing.values()):
             diff = sorted(set(keys.items()) ^ set(meta.keys.items()))
             raise ValueError(f"{rel}: {key_table} differ from {META_FILES[dt]}: {diff}")
         return keys
@@ -521,7 +538,8 @@ class _Loader:
             return lua.table_from(out)
 
         qdb = sb.modules["QuestieDB"]
-        qdb["questKeys"], qdb["npcKeys"], qdb["objectKeys"] = (alias_keys(dt) for dt in DATATYPES)
+        for dt in DATATYPES:
+            qdb[DATA_FILES[dt][1]] = alias_keys(dt)          # questKeys, npcKeys, objectKeys, itemKeys
         for name in _QUESTIEDB_CONSTANTS:
             qdb[name] = _pick(enum, name)
         sb.modules["ZoneDB"]["zoneIDs"] = enum["zoneIDs"]
@@ -755,6 +773,7 @@ class _Loader:
                 fields, _unresolved = _fix_fields(name, _as_lists(value), bit)
                 q.update(fields or {})
             q["race_mask_origin"] = _origin(q["race_mask"], self.origins["Quest"].get(qid, {}).get("requiredRaces"))
+            q["objectives"] = _objective_rows(self.ents["Quest"][qid].get("objectives"))
             q["new_in_forever"] = qid in self.forever_created
             q["faction_fixes"] = None
             if qid in self.faction_fixes:
@@ -807,12 +826,40 @@ class _Loader:
                 for nid, e in sorted(self.ents["Npc"].items())}
         objects = {oid: {"name": e.get("name") if isinstance(e.get("name"), str) else None}
                    for oid, e in sorted(self.ents["Object"].items())}
-        self.stats["final"] = {"Quest": len(quests), "Npc": len(npcs), "Object": len(objects)}
+        items = {iid: {"name": e.get("name") if isinstance(e.get("name"), str) else None,
+                       "npc_drops": list(e.get("npcDrops") or []), "object_drops": list(e.get("objectDrops") or [])}
+                 for iid, e in sorted(self.ents["Item"].items())}
+        self.stats["final"] = {"Quest": len(quests), "Npc": len(npcs), "Object": len(objects), "Item": len(items)}
         problems = self._quest_problems()
         self.stats["quest_problems"] = dict(sorted(Counter(problems.values()).items()))
-        return QuestieDBData(quests=quests, npcs=npcs, objects=objects, npc_spawns=npc_spawns,
+        return QuestieDBData(quests=quests, npcs=npcs, objects=objects, items=items, npc_spawns=npc_spawns,
                              object_spawns=object_spawns, xp=xp, stats=self.stats,
                              hidden_ids=frozenset(hidden_ids), quest_problems=problems)
+
+
+def _objective_rows(groups) -> list[dict]:
+    """Internal objectives value ({group: rows}) -> [{"group", "id", "text"(, "ids")}, ...] in group order.
+
+    Rows: creature / object / item (id, text, icon), kill credit ({ids}, base id, text, icon), spell
+    (spell id, text, item); reputation is one (faction, value) pair. An empty text reads as None."""
+    out = []
+    for g in sorted(groups or {}):
+        value = groups[g]
+        if g == 4:
+            if value and _num(value[0]):
+                out.append({"group": 4, "id": int(value[0]), "text": None})
+            continue
+        for row in value:
+            text = row[2] if g == 5 and len(row) > 2 else row[1] if g != 5 and len(row) > 1 else None
+            text = text if isinstance(text, str) and text.strip() else None
+            if g == 5:
+                ids = [i for i in (row[0] or ()) if _num(i)] if isinstance(row[0], tuple) else []
+                base = row[1] if len(row) > 1 and _num(row[1]) else (ids[0] if ids else None)
+                if base is not None:
+                    out.append({"group": 5, "id": int(base), "ids": [int(i) for i in ids], "text": text})
+            elif row and _num(row[0]):
+                out.append({"group": g, "id": int(row[0]), "text": text})
+    return out
 
 
 def _origin(mask, layer: str | None) -> str | None:

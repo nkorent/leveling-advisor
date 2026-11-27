@@ -5,7 +5,12 @@ ns.Settings = Settings_
 
 local PANEL_NAME = "Leveling Advisor"
 
-Settings_.DEFAULTS = { elite = true, dungeons = true, pinsAll = true, recorder = true, minimap = true }
+Settings_.DEFAULTS = { elite = true, dungeons = true, pinsAll = true, recorder = true, minimap = true,
+  giverRibbon = true, guide = true }
+
+-- Kept per character (LevelingAdvisorCharDB.settings, made on the first write);
+-- every other key is per account (LevelingAdvisorDB.settings).
+Settings_.PER_CHARACTER = { guide = true }
 
 local OPTIONS = {
   { key = "elite", label = "Include elite and group quests" },
@@ -13,20 +18,37 @@ local OPTIONS = {
   { key = "pinsAll", label = "Show pins for all recommended quest givers" },
   { key = "recorder", label = "Record quest data (local only)" },
   { key = "minimap", label = "Show minimap button" },
+  { key = "giverRibbon", label = "Mark recommended quests at quest givers" },
+  { key = "guide", label = "Guide: set a waypoint to the next step automatically" },
 }
 
 local listeners = {}
 local panelFrame, panelCategory
 
+-- The table that holds key: the character's or the account's settings, or nil
+-- before the saved variables are set up. create: make the character's table.
+local function store(key, create)
+  if not Settings_.PER_CHARACTER[key] then return ns.db and ns.db.settings end
+  local c = ns.chardb
+  if type(c) ~= "table" then return nil end
+  if type(c.settings) ~= "table" then
+    if not create then return nil end
+    c.settings = {}
+  end
+  return c.settings
+end
+
 function Settings_.get(key)
-  local v = ns.db and ns.db.settings and ns.db.settings[key]
+  local t = store(key, false)
+  local v = t and t[key]
   if v == nil then return Settings_.DEFAULTS[key] end
   return v
 end
 
 function Settings_.set(key, value)
-  if not (ns.db and ns.db.settings) then return end
-  ns.db.settings[key] = value
+  local t = store(key, true)
+  if not t then return end
+  t[key] = value
   for i = 1, #listeners do
     local ok, err = pcall(listeners[i], key, value)
     if not ok then geterrorhandler()(err) end

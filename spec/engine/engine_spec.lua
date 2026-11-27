@@ -14,11 +14,13 @@ end
 describe("Engine.compute", function()
   it("returns exactly zones, dungeon and sections", function()
     assert.same({ "sections", "zones" }, sortedKeys(Engine.compute(db, S18))) -- dungeon is nil at 18
-    assert.same({ "dungeon", "sections", "zones" }, sortedKeys(Engine.compute(db, S20)))
+    -- BFD at 22 (its level-23 and -24 quests are orange, so not recommended, at 20)
+    assert.same({ "dungeon", "sections", "zones" }, sortedKeys(Engine.compute(db, H.states.S22)))
   end)
 
   it("Horde state sees only Horde content", function()
-    local r = Engine.compute(db, H20)
+    -- level 22: the Horde quest 6382 (level 24) in Ashenvale is orange at 20
+    local r = Engine.compute(db, with(H20, { level = 22 }))
     -- Darkshore (1439) and Loch Modan (1432) are Alliance-only
     assert.same({ 1440 }, { r.zones[1].mapID })
     assert.equals(1, #r.zones)

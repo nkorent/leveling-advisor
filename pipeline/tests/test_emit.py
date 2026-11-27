@@ -161,6 +161,49 @@ def test_field_25_unavailable_after(tmp_path):
     assert encode_quest(mq(1, unavailable_after=[7]))[24] == [7]     # 0-based list index 24 == Lua 25
 
 
+def _ob(kind, ident, name, count=None, sources=None, from_kind=None, more=False):
+    return {"kind": kind, "id": ident, "name": name, "count": count, "from": sources, "from_kind": from_kind,
+            "from_more": more}
+
+
+def test_field_13_objective_index_and_field_26_objectives(tmp_path):
+    """Task 8: a point's 4th element is the 1-based index into field 26; field 26 is
+    {kind, id, name, count, from, fromKind, fromMore} per objective (kinds 1 npc, 2 object, 3 item,
+    4 other; fromKind 1 NPCs, 2 objects; fromMore true or nil)."""
+    obs = [_ob("npc", 6, "Kobold Vermin", 10),
+           _ob("item", 750, "Tough Wolf Meat", 8, ["Young Wolf", "Timber Wolf", "Ragged Wolf"], "npc", True),
+           _ob("item", 3910, "Snuff", None, ["Old Crate"], "object"),
+           _ob("other", None, None)]
+    q = emit_one(tmp_path, mq(
+        objective_points=[{"map_id": 1429, "x": 45.24, "y": 35.2, "objective": 2},
+                          {"map_id": 1429, "x": 1.0, "y": 2.0, "objective": None},
+                          {"map_id": 1426, "x": 3.0, "y": 4.0}],
+        objectives=obs, items={"provided": [], "required": [{"item_id": 750, "count": 8},
+                                                             {"item_id": 3910, "count": None}]}))
+    assert [lua_values(p) for p in q[13].values()] == [[1429, 45.2, 35.2, 2], [1429, 1, 2], [1426, 3, 4]]
+    f = q[26]
+    assert [f[1][k] for k in range(1, 8)] == [1, 6, "Kobold Vermin", 10, None, None, None]
+    assert [f[2][k] for k in (1, 2, 3, 4, 6, 7)] == [3, 750, "Tough Wolf Meat", 8, 1, True]
+    assert lua_values(f[2][5]) == ["Young Wolf", "Timber Wolf", "Ragged Wolf"]
+    assert [f[3][k] for k in (1, 2, 3, 4, 6, 7)] == [3, 3910, "Snuff", None, 2, None]
+    assert lua_values(f[3][5]) == ["Old Crate"]
+    assert [f[4][k] for k in range(1, 8)] == [4, None, None, None, None, None, None]
+    assert f[5] is None
+    # field 15: a known count, and nil (never a made-up 1) when unknown
+    assert [lua_values(r) for r in q[15].required.values()] == [[750, 8], [3910]]
+    assert encode_quest(mq(objectives=obs))[25][0] == [1, 6, "Kobold Vermin", 10, None, None, None]  # Lua 26
+
+
+def test_field_26_nil_without_objectives(tmp_path):
+    q = emit_one(tmp_path, mq(objectives=[]))
+    assert q[26] is None
+    assert encode_quest(mq())[25:] == [None]
+    with pytest.raises(ValueError, match="objective kind"):
+        encode_quest(mq(objectives=[_ob("monster", 1, "X")]))
+    with pytest.raises(ValueError, match="objective source kind"):
+        encode_quest(mq(objectives=[_ob("item", 1, "X", None, ["Y"], "vendor")]))
+
+
 @pytest.mark.parametrize("flag, bit", [("elite", 1), ("class_quest", 2), ("new_in_forever", 4),
                                        ("unverified", 8), ("repeatable", 16), ("dungeon_quest", 32)])
 def test_flags_bitfield_each_flag(tmp_path, flag, bit):

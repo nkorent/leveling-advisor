@@ -55,12 +55,18 @@ end
 local EMPTY_TEXT = "Nothing to do right here. Pick one of the recommended zones."
 
 -- The right page's list elements: a header per section, then its quest rows
--- unless the section is collapsed (`collapsed[key]`).
-function Model.questList(rec, collapsed)
+-- unless the section is collapsed (`collapsed[key]`). The Later section is the other way
+-- round: closed unless `laterOpen` (the character's `ui.laterOpen`). With no
+-- recommended section (none at all, or only Later) the list starts with a line
+-- that says so.
+function Model.questList(rec, collapsed, laterOpen)
   collapsed = collapsed or {}
   local out = {}
+  local recommended = 0
   for _, s in ipairs(rec and rec.sections or {}) do
-    local closed = collapsed[s.key] and true or false
+    if s.key ~= "later" then recommended = recommended + 1 end
+    local closed
+    if s.key == "later" then closed = not laterOpen else closed = collapsed[s.key] and true or false end
     out[#out + 1] = { kind = "header", key = s.key, title = s.title, count = #s.rows,
       collapsed = closed, height = 26 }
     if not closed then
@@ -69,7 +75,7 @@ function Model.questList(rec, collapsed)
       end
     end
   end
-  if #out == 0 then out[1] = { kind = "text", text = EMPTY_TEXT, height = 40 } end
+  if recommended == 0 then table.insert(out, 1, { kind = "text", text = EMPTY_TEXT, height = 40 }) end
   return out
 end
 

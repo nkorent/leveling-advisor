@@ -27,11 +27,24 @@ local function copyList(list)
   return out
 end
 
+-- Field 26: { {kind, id, name, count, from, fromKind, fromMore}, ... } (kind 1 npc, 2 object,
+-- 3 item, 4 other; fromKind 1 NPCs, 2 objects). `from` is copied.
+local function decodeObjectives(list)
+  local out = {}
+  for i, o in ipairs(list or {}) do
+    out[i] = { index = i, kind = o[1], id = o[2], name = o[3], count = o[4],
+      from = o[5] and copyList(o[5]) or nil, fromKind = o[6], fromMore = o[7] }
+  end
+  return out
+end
+
 local function decode(id, r)
   local flags = r[9] or 0
+  local objectives = decodeObjectives(r[26])
   local points = {}
   for i, p in ipairs(r[13] or {}) do
-    points[i] = { mapID = p[1], x = p[2], y = p[3] }
+    -- a 4th element is the objective's index in field 26 (nil: the point names no known objective)
+    points[i] = { mapID = p[1], x = p[2], y = p[3], objective = p[4] and objectives[p[4]] or nil }
   end
   local chain
   if r[22] then chain = { id = r[22][1], index = r[22][2], length = r[22][3] } end
@@ -51,6 +64,7 @@ local function decode(id, r)
     dungeonKey = r[23], requiredMaxLevel = r[24],
     -- ineligible once any of these is completed or in the log (Eligibility only, never Route)
     unavailableAfter = copyList(r[25]),
+    objectives = objectives,
   }
 end
 

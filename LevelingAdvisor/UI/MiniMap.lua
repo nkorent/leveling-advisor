@@ -6,6 +6,9 @@ local method = ns.Util.method
 
 -- The zone mini map of the detail page: the quest's giver, turn-in and
 -- objectives on the zone art; hover names a marker, click sets a waypoint.
+-- An objective dot's tooltip says what it is (QuestInfo.objectiveTooltip: name,
+-- kind and count, where an item drops, live progress from the quest log).
+-- No player dot (since 0.3.0).
 MiniMap.W, MiniMap.H = 300, 200
 
 local SHIELD = "Interface\\AddOns\\" .. tostring(addonName) .. "\\Media\\PinShield"
@@ -38,7 +41,15 @@ local function newMarker(mm)
   b:SetScript("OnEnter", function(self)
     if type(GameTooltip) ~= "table" or not self.point then return end
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText(self.point.label .. " " .. Style.coords(self.point.x, self.point.y), 1, 1, 1)
+    if self.point.kind == "objective" then
+      local model = mm.model
+      local live = QuestInfo.liveObjectives(model and model.questID)
+      for i, l in ipairs(QuestInfo.objectiveTooltip(self.point, model, live)) do
+        if i == 1 then GameTooltip:SetText(l[1], l[2], l[3], l[4]) else GameTooltip:AddLine(l[1], l[2], l[3], l[4]) end
+      end
+    else
+      GameTooltip:SetText(self.point.label .. " " .. Style.coords(self.point.x, self.point.y), 1, 1, 1)
+    end
     GameTooltip:Show()
   end)
   b:SetScript("OnLeave", function()
@@ -69,16 +80,12 @@ function MiniMap.new(parent)
   mm.caption:SetPoint("TOPLEFT", mm.frame, "TOPLEFT", 0, -(MiniMap.H + 4))
   mm.caption:SetWidth(MiniMap.W)
   mm.caption:SetWordWrap(true)
-  mm.player = CreateFrame("Frame", nil, mm.box)
-  mm.player:SetSize(10, 10)
-  method(mm.player, "SetFrameLevel", level(mm.box, 5))
-  mm.playerDot = disc(mm.player, 10, { 0.35, 0.7, 1.0 })
 
   -- Hides the map; shows it for `model` (QuestInfo.miniMap). `quest` is the
   -- detail model. Returns the height the section needs, 0 when hidden.
   function mm:show(model, quest)
     if not model then self:hide(); return 0 end
-    self.mapID = model.mapID
+    self.mapID, self.model = model.mapID, model
     ZoneArt.draw(self.box, model.mapID, "fit")
     for _, m in ipairs(self.markers) do m:Hide() end
     for i, p in ipairs(model.points) do
@@ -98,12 +105,6 @@ function MiniMap.new(parent)
       place(self, m, p.x, p.y)
       m:Show()
     end
-    if model.player then
-      place(self, self.player, model.player.x, model.player.y)
-      self.player:Show()
-    else
-      self.player:Hide()
-    end
     local lines = { (model.mapName or "Map") .. " — click a marker for a waypoint" }
     for _, o in ipairs(model.others) do
       lines[#lines + 1] = "+" .. Style.plural(o.count, "point") .. " in " .. o.name
@@ -116,7 +117,7 @@ function MiniMap.new(parent)
   end
 
   function mm:hide()
-    self.mapID = nil
+    self.mapID, self.model = nil, nil
     self.frame:Hide()
   end
   return mm

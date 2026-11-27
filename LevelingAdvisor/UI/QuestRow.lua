@@ -20,8 +20,10 @@ local CHAIN_ICON = "Interface\\AddOns\\LevelingAdvisor\\Media\\ChainLink"
 local CHAIN_SIZE = 17
 local CHAIN_PENDING = { 0.48, 0.31, 0.07 } -- earlier quests left: brown-gold
 local CHAIN_READY = { 0.18, 0.42, 0.12 }   -- chain ready: green
+local CHAIN_GREY = { 0.45, 0.45, 0.45 }    -- blocked path: grey, never the ready green
 local CHAIN_COUNT = { 0.62, 0.12, 0.09 }
 local CHAIN_BLOCKED = { 1, 0.2, 0.2 }
+local NOT_AVAILABLE = "Not available to your character"
 
 -- The chain badge: a link icon (a Frame, so it can show a tooltip) and, while earlier
 -- quests are left, their count.
@@ -45,7 +47,7 @@ function QuestRow.buildBadge(root)
   b.icon:SetPoint("LEFT", b.frame, "LEFT", 0, 0)
   b.icon:SetTexture(CHAIN_ICON)
   b.count = Style.text(b.frame, "GameFontNormalSmall", CHAIN_COUNT)
-  b.count:SetTextColor(CHAIN_COUNT[1], CHAIN_COUNT[2], CHAIN_COUNT[3])
+  Style.setTextColor(b.count, CHAIN_COUNT[1], CHAIN_COUNT[2], CHAIN_COUNT[3])
   b.count:SetPoint("LEFT", b.icon, "RIGHT", 1, 0)
   b.frame:SetScript("OnEnter", function(self)
     local path = b.path
@@ -53,7 +55,7 @@ function QuestRow.buildBadge(root)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText("Chain quest", 1, 1, 1)
     if path.blocked then
-      GameTooltip:AddLine("Not available to your character", CHAIN_BLOCKED[1], CHAIN_BLOCKED[2], CHAIN_BLOCKED[3])
+      GameTooltip:AddLine(NOT_AVAILABLE, CHAIN_BLOCKED[1], CHAIN_BLOCKED[2], CHAIN_BLOCKED[3])
     elseif path.remaining > 0 then
       GameTooltip:AddLine(path.remaining .. (path.remaining == 1 and " earlier quest" or " earlier quests")
         .. " to do first", 1, 1, 1)
@@ -119,6 +121,7 @@ local function layoutBadge(p, path)
     return 0
   end
   local c = path.remaining > 0 and CHAIN_PENDING or CHAIN_READY
+  if path.blocked then c = CHAIN_GREY end
   b.icon:SetVertexColor(c[1], c[2], c[3])
   local w = CHAIN_SIZE
   b.count:SetShown(path.remaining > 0)
@@ -131,13 +134,34 @@ local function layoutBadge(p, path)
   return w
 end
 
+-- True when some unit of the path (the steps with one `number`; a step without one is its
+-- own unit) has every step blocked: an earlier step rules the chain out. A blocked path
+-- without such a unit is blocked by the quest itself.
+local function stepBlocked(path)
+  local units, order = {}, {}
+  for i, step in ipairs(path.steps or {}) do
+    local key = step.number ~= nil and step.number or ("#" .. i)
+    local u = units[key]
+    if not u then u = { blocked = true }; units[key] = u; order[#order + 1] = u end
+    if step.status ~= "blocked" then u.blocked = false end
+  end
+  for _, u in ipairs(order) do
+    if u.blocked then return true end
+  end
+  return false
+end
+
 -- "Start: <name> · <zone>" for a chain with earlier quests left, "First: <name> · not in the
 -- advisor's data" when its first open step is not a shipped quest (nothing says it can be
--- started), else nil.
-local function chainSub(db, path)
+-- started), else nil. A blocked path says it is not available; when the quest itself is
+-- ruled out (no step is), the quest's own status ("Horde only", QuestInfo.statusText).
+local function chainSub(db, path, row)
   if path.remaining <= 0 then return nil end
   -- a chain that cannot be finished never says where to start
-  if path.blocked then return "Not available to your character" end
+  if path.blocked then
+    if stepBlocked(path) then return NOT_AVAILABLE end
+    return QuestInfo.statusText(row) or NOT_AVAILABLE
+  end
   if path.first then
     local step = path.steps[path.first]
     local zone = step and step.giver and QuestInfo.zoneName(db, step.giver.mapID)
@@ -174,7 +198,7 @@ local function layoutTitle(p, tags, badgeW)
     local t = tags[i]
     fs:SetShown(t ~= nil)
     if t then
-      fs:SetTextColor(t.color[1], t.color[2], t.color[3])
+      Style.setTextColor(fs, t.color[1], t.color[2], t.color[3])
       fs:ClearAllPoints()
       fs:SetPoint("LEFT", prev, "RIGHT", 6, 0)
       prev = fs
@@ -214,11 +238,12 @@ end
 function QuestRow.render(frame, row, opts)
   opts = opts or {}
   local p = List.part(frame, "quest", build)
-  local m = QuestInfo.marker(row.soon and "unavailable" or row.state)
+  local m = QuestInfo.marker((row.soon or (row.later and row.state == "available")) and "unavailable"
+    or row.state)
   Style.setTexture(p.marker, m.atlas, m.atlas and QuestInfo.MARKER_FILES[m.atlas] or m.file, m.desaturated)
   local c = Style.DIFFICULTY[row.color] or Style.DIFFICULTY.yellow
   p.level:SetText(tostring(row.level or ""))
-  p.level:SetTextColor(c[1], c[2], c[3])
+  Style.setTextColor(p.level, c[1], c[2], c[3])
   p.title:SetText(row.name or "")
   local A = ns.Advisor
   local q = A and A.db and method(A.db, "quest", row.questID)
@@ -237,7 +262,7 @@ function QuestRow.render(frame, row, opts)
   if sub == nil and A and A.db then
     sub = QuestInfo.subLine(A.db, row, A.last and A.last.state)
   end
-  local chain = path and chainSub(A.db, path)
+  local chain = path and chainSub(A.db, path, row)
   p.sub:SetText(chain or sub or "")
   p.bg:SetShown(opts.selected and true or false)
 

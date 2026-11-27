@@ -14,6 +14,9 @@ end
 return {
   S18 = s18(18),
   S20 = s18(20),
+  -- BFD's quests (level 23 and 24) are orange at 20 and 21, so its first fitting level is 22
+  -- (level fit, 0.3.0): the state for the recommended-dungeon specs.
+  S22 = s18(22),
   H20 = {
     faction = "Horde", raceMask = 2, classMask = 1, classFile = "WARRIOR",
     level = 20, mapID = 1411, x = 52.0, y = 43.0,

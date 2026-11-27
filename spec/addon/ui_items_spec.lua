@@ -204,6 +204,84 @@ describe("quest items and rewards", function()
     assert.equal(3, fake.itemButtonCount[b2])
   end)
 
+  ---------------------------------------------------------------------------
+  -- Addendum (Task 8): "Up to Snuff needs 15 snuffs, but it says 0/1".
+  ---------------------------------------------------------------------------
+  local function snuff(count)
+    return function(d)
+      d.quests[4763][15] = { required = { { 12355, count } } }
+      d.quests[4763][26] = { { 3, 12355, "Talisman of Corruption", count } }
+    end
+  end
+
+  it("required item: a known count shows have/count, an unknown count just have", function()
+    load({ patch = snuff(15) })
+    local m = Items.model(db, db:quest(4763), state, { count = function() return 4 end })
+    assert.same({ { itemID = 12355, count = 15, have = 4, note = "needed" } }, m.required)
+    load({ patch = snuff(nil) })
+    m = Items.model(db, db:quest(4763), state, { count = function() return 4 end })
+    assert.same({ { itemID = 12355, have = 4, note = "needed" } }, m.required)
+    local b = btn(); Items.setItem(b, { itemID = 12355, count = 15, have = 4 })
+    assert.equal("4/15", b.Count:GetText())
+    local b2 = btn(); Items.setItem(b2, { itemID = 12355, have = 0 })
+    assert.equal("0", b2.Count:GetText())
+    assert.is_nil(fake.itemButtonCount[b2])
+  end)
+
+  it("required item: the quest log's numRequired and numFulfilled win", function()
+    load({ patch = snuff(nil) })
+    local live = {
+      { text = "Talisman of Corruption: 3/15", type = "item", finished = false, numFulfilled = 3, numRequired = 15 },
+    }
+    local m = Items.model(db, db:quest(4763), state, { count = function() return 9 end, objectives = live })
+    assert.same({ { itemID = 12355, count = 15, have = 3, note = "needed" } }, m.required)
+    -- the static count loses to the log too
+    load({ patch = snuff(1) })
+    m = Items.model(db, db:quest(4763), state, { count = function() return 9 end, objectives = live })
+    assert.same({ 15, 3 }, { m.required[1].count, m.required[1].have })
+    -- an entry of another type, or another item, is not this item's
+    m = Items.model(db, db:quest(4763), state, { count = function() return 9 end, objectives = {
+      { text = "Talisman of Corruption slain: 3/15", type = "monster", numFulfilled = 3, numRequired = 15 },
+      { text = "Wolf Meat: 2/4", type = "item", numFulfilled = 2, numRequired = 4 } } })
+    assert.same({ 1, 9 }, { m.required[1].count, m.required[1].have })
+    -- no objective name in the data: the item's own name (GetItemInfo) is used
+    load({ patch = function(d) d.quests[4763][15] = { required = { { 12355 } } } end })
+    m = Items.model(db, db:quest(4763), state, { count = function() return 0 end, objectives = live,
+      itemName = function(id) return id == 12355 and "Talisman of Corruption" or nil end })
+    assert.same({ 15, 3 }, { m.required[1].count, m.required[1].have })
+  end)
+
+  it("realEnv reads the live objectives by questID, fail-soft", function()
+    load({ patch = snuff(nil) })
+    assert.is_nil(Items.realEnv(4763).objectives)
+    fake.setLog(4763, { choices = {}, rewards = {}, objectives = {
+      { text = "Talisman of Corruption: 2/5", type = "item", finished = false, numFulfilled = 2, numRequired = 5 } } })
+    local env1 = Items.realEnv(4763)
+    assert.equal("Talisman of Corruption: 2/5", env1.objectives[1].text)
+    fake.loadItems(12355)
+    assert.equal("Talisman of Corruption", env1.itemName(12355))
+    local m = Items.model(db, db:quest(4763), state, env1)
+    assert.same({ 5, 2 }, { m.required[1].count, m.required[1].have })
+    env.C_QuestLog.GetQuestObjectives = function() error("boom") end
+    assert.is_nil(Items.realEnv(4763).objectives)
+    local d = ns.UI.QuestDetail.new(fake.newFrame("Frame"))
+    d:show(4763)
+    assert.same({}, env.errors)
+  end)
+
+  it("the detail page shows 0/15 for Up to Snuff-like data, never 0/1", function()
+    load({ patch = snuff(15) })
+    local d = ns.UI.QuestDetail.new(fake.newFrame("Frame"))
+    d:show(4763)
+    local b = fake.find(function(w) return w.laItemID == 12355 and w.laNote == "needed" end)
+    assert.equal("0/15", b.Count:GetText())
+    load({ patch = snuff(nil) })
+    d = ns.UI.QuestDetail.new(fake.newFrame("Frame"))
+    d:show(4763)
+    b = fake.find(function(w) return w.laItemID == 12355 and w.laNote == "needed" end)
+    assert.equal("0", b.Count:GetText())
+  end)
+
   it("the detail page shows provided, required and reward buttons", function()
     load({ patch = patch })
     local d = ns.UI.QuestDetail.new(fake.newFrame("Frame"))

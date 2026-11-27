@@ -97,6 +97,13 @@ giver whose two NPC sources contradict each other ("Conflict"), is a faction-con
 
 Chains: every kept quest of a chain gets the longest length any member's page reports.
 
+Objectives (Contract A field 26, ``pipeline.objectives``): built from the QuestieDB objective rows
+(``objectives``; a plain Questie dict's ``objective_*_ids`` otherwise) with QuestieDB's NPC, object and
+item names and drop sources, else from the outof.games point names; each objective point gets the
+1-based index of its objective (``objective``, None when unmatched). Required items (field 15) take the
+count of their item objective, from the objective text by the same never-guessing rule: None when the
+text does not say, never a placeholder 1 (provenance ``objectives``: "questiedb" | "outofgames").
+
 Exclusion reasons, checked in this order (first match wins; * = added from the crawl data,
 accepted by the controller):
   test-name          name matches TEST_NAME_RE (placeholder, deprecated or test quest)
@@ -153,6 +160,8 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter, defaultdict
+
+from pipeline.objectives import Names, build_objectives, rows_from_ids
 
 TEST_NAME_RE = re.compile(
     r"(?i)^(\[(dnt|ph|unused|test)\]|(dnt|ph)$|deprecated\b|unused\b|zz|test\s*\d*$|test quest\b)")
@@ -535,8 +544,10 @@ def _items(entries) -> list[dict]:
 
 
 def _merge_one(qid: int, o: dict, z: dict | None, rec: dict | None,
-               npcs: dict[int, str | None], fill: "_Fill | None" = None) -> tuple[dict, dict]:
-    """(merged quest, info for exclusion and report) for one outof.games quest."""
+               npcs: dict[int, str | None], fill: "_Fill | None" = None,
+               names: Names | None = None) -> tuple[dict, dict]:
+    """(merged quest, info for exclusion and report) for one outof.games quest. names: the QuestieDB
+    names the objectives are built with (``Names.from_questiedb``; empty without QuestieDB)."""
     prov: dict[str, str] = {}
     info = {"race_unclear": False, "class_unclear": False, "faction_from_questie": False,
             "faction_from_giver": False, "faction_conflict": False, "giver_faction_unknown": False,
@@ -662,9 +673,28 @@ def _merge_one(qid: int, o: dict, z: dict | None, rec: dict | None,
         prov["unavailable_after"] = "outofgames" if not after else "outofgames+questie"
     unavailable_after = [i for i in dict.fromkeys(after + oog_after) if i != qid] or None
 
-    # items: Questie only (counts of required items unknown in v1 -> 1)
+    # objectives (field 26) and the objective index of each point (field 13): QuestieDB rows, else
+    # the outof.games point names; see pipeline.objectives
+    raw_points = o.get("objective_points") or []
+    rows = zq.get("objectives")
+    rows = rows_from_ids(zq) if rows is None else rows
+    turn_in = _place(o.get("turn_in"))
+    maps = {p.get("map_id") for p in [*raw_points, giver or {}, turn_in or {}] if p.get("map_id") is not None}
+    objectives, indices = build_objectives(rows, raw_points, o.get("objective_text"), names or Names(), maps)
+    if objectives:
+        prov["objectives"] = "questiedb" if rows else "outofgames"
+    points = [{"map_id": p.get("map_id"), "x": p.get("x"), "y": p.get("y"), "objective": index}
+              for p, index in zip(raw_points, indices)]
+    if points:
+        prov["objective_points"] = "outofgames"
+
+    # items: Questie only; a required item's count is its item objective's (None when the text does not say)
+    item_counts: dict = {}
+    for ob in objectives:
+        if ob["kind"] == "item" and ob["id"] is not None:
+            item_counts.setdefault(ob["id"], ob["count"])
     items = {"provided": [zq["source_item_id"]] if zq.get("source_item_id") else [],
-             "required": [{"item_id": i, "count": 1} for i in zq.get("objective_item_ids") or []]}
+             "required": [{"item_id": i, "count": item_counts.get(i)} for i in zq.get("objective_item_ids") or []]}
     if items["provided"] or items["required"]:
         prov["items"] = "questie"
 
@@ -700,9 +730,6 @@ def _merge_one(qid: int, o: dict, z: dict | None, rec: dict | None,
     # new in Forever: absent from QuestieDB, or created there by a Forever layer (not Era data)
     new = z is None or bool(z.get("new_in_forever"))
     chain = _chain(qid, o.get("chain") or [])
-    points = [{k: p.get(k) for k in ("map_id", "x", "y")} for p in o.get("objective_points") or []]
-    if points:
-        prov["objective_points"] = "outofgames"
     merged = {
         "id": qid,
         "name": src("name", o.get("name"), "outofgames"),
@@ -721,7 +748,7 @@ def _merge_one(qid: int, o: dict, z: dict | None, rec: dict | None,
         "dungeon_quest": dungeon,
         "group_size": group_size,
         "giver": giver,
-        "turn_in": src("turn_in", _place(o.get("turn_in")), "outofgames"),
+        "turn_in": src("turn_in", turn_in, "outofgames"),
         "objective_points": points,
         "objective_text": src("objective_text", o.get("objective_text"), "outofgames"),
         "items": items,
@@ -731,6 +758,7 @@ def _merge_one(qid: int, o: dict, z: dict | None, rec: dict | None,
         "prereq": prereq,
         "exclusive_to": src("exclusive_to", exclusive_to, "questie"),
         "unavailable_after": unavailable_after,
+        "objectives": objectives,
         "breadcrumb_of": src("breadcrumb_of", zq.get("breadcrumb_of"), "questie"),
         "chain": src("chain", chain, "outofgames"),
         "dungeon_key": None,
@@ -824,6 +852,18 @@ def _prereq_ids(q: dict) -> list[int]:
     return [*(pre.get("all") or []), *(pre.get("any") or [])]
 
 
+def _objective_counts(quests: dict) -> dict:
+    """Over the kept quests: quests with objectives, objectives, objectives with a count, objective
+    points, points with an objective index, required items and required items with a count."""
+    obs = [ob for q in quests.values() for ob in q.get("objectives") or []]
+    pts = [p for q in quests.values() for p in q.get("objective_points") or []]
+    req = [r for q in quests.values() for r in (q.get("items") or {}).get("required") or []]
+    return {"quests": sum(1 for q in quests.values() if q.get("objectives")), "objectives": len(obs),
+            "counts": sum(1 for ob in obs if ob["count"] is not None), "points": len(pts),
+            "points_indexed": sum(1 for p in pts if p.get("objective") is not None),
+            "required_items": len(req), "required_counts": sum(1 for r in req if r.get("count") is not None)}
+
+
 def merge(oog: dict[int, dict], questie: dict[int, dict], live_maps: set[int] | None,
           recorder: dict[int, dict] | None = None, without: set[str] = frozenset(),
           npcs: dict[int, str | None] | None = None, questiedb=None,
@@ -861,7 +901,9 @@ def merge(oog: dict[int, dict], questie: dict[int, dict], live_maps: set[int] | 
     npcs = npcs or {}
     fill = xp_report = None
     hidden_ids, problems = frozenset(), {}
+    names = Names()
     if questiedb is not None and "questie" not in without:
+        names = Names.from_questiedb(questiedb)
         xp_report = xp_check(oog, questiedb.xp or {})
         fill = _Fill(questiedb, trusted_maps, xp_report["fill"])
         hidden_ids = frozenset(getattr(questiedb, "hidden_ids", None) or ())
@@ -884,7 +926,7 @@ def merge(oog: dict[int, dict], questie: dict[int, dict], live_maps: set[int] | 
     totals, kept = Counter(), Counter()
     for qid in sorted(oog):
         o, z = oog[qid], questie.get(qid)
-        m, info = _merge_one(qid, o, z, recorder.get(qid), npcs, fill)
+        m, info = _merge_one(qid, o, z, recorder.get(qid), npcs, fill, names)
         views = [z]
         fixes = (z or {}).get("faction_fixes")
         if fixes:
@@ -892,7 +934,7 @@ def merge(oog: dict[int, dict], questie: dict[int, dict], live_maps: set[int] | 
             faction = m["faction"]
             if faction in SINGLE_FACTIONS and fixes.get(faction) is not None:
                 views.append({**z, **fixes[faction]})
-                m, info = _merge_one(qid, o, views[-1], recorder.get(qid), npcs, fill)
+                m, info = _merge_one(qid, o, views[-1], recorder.get(qid), npcs, fill, names)
                 info["faction_fix_unclear"] = m["faction"] != faction
                 faction_fixes_applied += m["faction"] == faction
             else:
@@ -979,6 +1021,7 @@ def merge(oog: dict[int, dict], questie: dict[int, dict], live_maps: set[int] | 
         "excluded_by_reason": {r: by_reason[r] for r in EXCLUSION_ORDER if by_reason[r]},
         **{k: totals[k] for k in _FLAG_KEYS},
         "among_kept": {k: kept[k] for k in _FLAG_KEYS},
+        "objectives": _objective_counts(quests),
     }
     report = {
         "conflicts": conflicts,

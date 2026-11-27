@@ -1,6 +1,6 @@
 # Questie source: QuestieDB Forever (vendored, git-ignored under data/vendor/)
 
-Since Questie v12 the quest, NPC and object data lives in **QuestieDB**, Questie's data repository.
+Since Questie v12 the quest, NPC, object and item data lives in **QuestieDB**, Questie's data repository.
 Its **Forever** flavor is what the pipeline reads (`pipeline/questiedb.py`). Nothing under
 `data/vendor/` is committed.
 
@@ -34,27 +34,30 @@ operations of QuestieDB's ADR 0016 are reimplemented in Python.
 
 ## What is read, in order
 
-1. **Raw data**: `data/Forever/forever{Quest,Npc,Object}DB.lua` (`QuestieDB.<x>Data = [[return {...}]]`,
+1. **Raw data**: `data/Forever/forever{Quest,Npc,Object,Item}DB.lua` (`QuestieDB.<x>Data = [[return {...}]]`,
    Era data with coordinates converted to Forever map frames). Field indices come from each file's own
-   `QuestieDB.<x>Keys`. Checked against `src/meta/{quest,npc,object}Meta.lua`, and any failure stops
+   `QuestieDB.<x>Keys`. Checked against `src/meta/{quest,npc,object,item}Meta.lua`, and any failure stops
    the build:
-   - the file's key table must equal the meta `keys` table (same names, same indices);
+   - the file's key table must equal the meta `keys` table (same names, same indices), except that it
+     may lack trailing meta keys (fields added after the data was written: the item data has no
+     `teachesSpell`, index 16);
    - every meta key index must lie in 1..`fieldCount`, be unique and have a `types` entry (number,
      string or table);
    - every table-typed field the loader reads must have a `structures` entry.
 
    The loader then takes each field's type and shape (`types`, `structures`) from the meta file as
-   given; it does not check them against the data. Only the fields the merge needs are read.
+   given; it does not check them against the data. Only the fields the merge needs are read (items:
+   `name`, `npcDrops`, `objectDrops`, for the quest objectives of Contract A field 26).
 2. **Enums**: every `src/corrections/enum/*.lua` (`constants.lua` first), chosen for Forever as
    QuestieDB's correction compat does: the shared table, else Forever's own (`raceKeys` with
    `SKYBORNE_ALLIANCE`/`SKYBORNE_HORDE`, `npcFlags`), else Classic's (`classKeys`).
 3. **Static correction layers**, in the order `docs/forever.md` gives (a later layer wins):
-   1. legacy: `src/corrections/Forever/legacy/classic{Quest,NPC,Object}Fixes.lua` `Load()` (the item,
+   1. legacy: `src/corrections/Forever/legacy/classic{Quest,NPC,Object,Item}Fixes.lua` `Load()` (the
       quest reputation and item-start providers are not read);
-   2. generated delta-base: `src/corrections/Forever/generated/foreverBase{Quest,Npc,Object}.lua`;
-   3. traces: `src/corrections/Forever/traces/forever{Quest,Npc,Object}Traces.lua`;
+   2. generated delta-base: `src/corrections/Forever/generated/foreverBase{Quest,Npc,Object,Item}.lua`;
+   3. traces: `src/corrections/Forever/traces/forever{Quest,Npc,Object,Item}Traces.lua`;
    4. relation traces: `src/corrections/Forever/traces/foreverQuestRelationTraces.lua`;
-   5. authored: `src/corrections/Forever/forever{Quest,NPC,Object}Fixes.lua` `Load()`.
+   5. authored: `src/corrections/Forever/forever{Quest,NPC,Object,Item}Fixes.lua` `Load()`.
 
    Scalars replace; `{}` clears a field; `<field>_add` (index + 1000) and `<field>_remove` (index - 1000)
    follow ADR 0016 (lists, starter/finisher groups with positional nil holes such as `{nil, {424005}}`,
@@ -70,7 +73,7 @@ operations of QuestieDB's ADR 0016 are reimplemented in Python.
    specialization, special flags), both values are kept (`faction_dependent`, the quest's
    `faction_fixes`): the merge applies the value of the quest's own faction and excludes a quest of
    both factions as `faction-fix-unclear`. Other disagreements (quest name, objectives, source item;
-   NPC and object spawns) keep the static value (`dynamic_not_applied`).
+   NPC and object spawns; item drop sources) keep the static value (`dynamic_not_applied`).
 5. **Blacklist**: `QuestieQuestBlacklist:Load()` with a Forever client stub: `Questie.IsForever = true`,
    every other `Questie.Is*` flag (`IsClassic`, `IsEra`, `IsSoD`, `IsTBC`, `IsWotlk`, `IsCata`, `IsMoP`,
    ...) false, `Expansions = {Era = 1, Tbc = 2, Wotlk = 3, Cata = 4, MoP = 5, Current = 1}`. `true`
@@ -92,6 +95,8 @@ data is the corrected data before those passes, not byte-for-byte what QuestieDB
 outof.games (1.60.1 game data) stays authoritative; QuestieDB only fills what is missing (see the
 `pipeline/merge.py` docstring):
 
+- quest objectives (Contract A field 26: kinds, NPC/object/item names, where items drop; see
+  `pipeline/objectives.py`) and the objective of each outof.games objective point;
 - quest levels, race/class masks, prerequisites, exclusive/breadcrumb links, items, skill/reputation
   requirements, the blacklist, and NPC factions (`friendlyToFaction`; outof.games NPC pages win). An NPC
   that a Forever layer created without ever stating `friendlyToFaction` has an unknown faction, not

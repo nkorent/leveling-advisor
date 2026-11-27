@@ -36,6 +36,39 @@ describe("DB", function()
     assert.same({ 1302, 420 }, d:quest(7009).unavailableAfter)
     assert.same({}, d:quest(7003).unavailableAfter)
   end)
+  it("decodes field 26 objectives and the field 13 objective index", function()
+    local data = H.data()
+    local r = {}
+    for k, v in pairs(data.quests[4763]) do r[k] = v end
+    r[13] = { { 1439, 45.2, 35.2, 2 }, { 1439, 46.0, 36.0 }, { 1440, 10.0, 10.0, 1 } }
+    r[26] = {
+      { 1, 6, "Kobold Vermin", 10 },
+      { 3, 750, "Tough Wolf Meat", 8, { "Young Wolf", "Timber Wolf" }, 1, true },
+      { 4, nil, nil, nil },
+    }
+    data.quests[7010] = r
+    local d = ns.DB.new(data)
+    local q = d:quest(7010)
+    assert.equals(3, #q.objectives)
+    assert.same({ index = 1, kind = 1, id = 6, name = "Kobold Vermin", count = 10 }, q.objectives[1])
+    assert.same({ index = 2, kind = 3, id = 750, name = "Tough Wolf Meat", count = 8,
+      from = { "Young Wolf", "Timber Wolf" }, fromKind = 1, fromMore = true }, q.objectives[2])
+    assert.same({ index = 3, kind = 4 }, q.objectives[3])
+    -- the {mapID, x, y} reading is unchanged; an indexed point also has its objective
+    assert.same({ 1439, 45.2, 35.2 }, { q.points[1].mapID, q.points[1].x, q.points[1].y })
+    assert.equals(q.objectives[2], q.points[1].objective)
+    assert.is_nil(q.points[2].objective)
+    assert.equals(q.objectives[1], q.points[3].objective)
+    -- the from list is a copy
+    q.objectives[2].from[1] = "changed"
+    assert.equals("Young Wolf", data.quests[7010][26][2][5][1])
+    -- an index without an objective (bad data) is ignored
+    r[13] = { { 1439, 1, 2, 9 } }
+    data.quests[7011] = r
+    assert.is_nil(ns.DB.new(data):quest(7011).points[1].objective)
+    -- no field 26: an empty list
+    assert.same({}, db:quest(4763).objectives)
+  end)
   it("decodes flags", function()
     local q = db:quest(1100)
     assert.is_true(q.newInForever); assert.is_true(q.unverified); assert.is_false(q.elite)

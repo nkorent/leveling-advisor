@@ -11,9 +11,13 @@ Status: working addon with a full in-game book. It has a bookmark tab on the Map
 - **The book.** A two-page window with the recommended zones and your dungeon on the left and the quests on the right. Open it with `/advisor`, the key binding, or the Leveling Advisor bookmark on the Map & Quest Log.
 - **Zone routes.** Pick a zone to see a step-by-step route. Each step lists the quests to pick up, do and turn in there, and the XP it is worth.
 - **Dungeon pages.** A "Before You Go" list of the quests to pick up on your way, the dungeon entrance and its level range.
-- **Quest details.** Why the quest is recommended, its chain and XP, the items it provides, requires and rewards (with item tooltips), and a mini map of the zone. The mini map marks the giver, the objectives and you. Hover a marker for its name; click it to set a waypoint.
+- **Level fit.** Only yellow and green quests are recommended, and the zones and routes are the ones that fit your level. Quests that are too high wait in a collapsed "Later — too high for now" list, each with the level at which it gets good. A zone with many green quests you skipped says "Catch up".
+- **The guide.** A waypoint to the next step of your top zone's route, set automatically and moved as you go, even with the book closed. Show on Map, a map pin click or a waypoint of your own pauses it (it never overrides your waypoint), and "Continue with waypoint" resumes it. Turn it on or off and continue from the minimap button's right-click menu, the book's main page, or `/advisor guide`.
+- **Quest details.** Why the quest is recommended, its chain and XP, the items it provides, requires and rewards (with item tooltips), and a mini map of the zone. The mini map marks the giver, the turn-in and the objectives. Hover a marker for its name; an objective dot also says the item or creature, how many you need, where items drop and your progress. Click a marker to set a waypoint.
+- **Quest chains.** A quest's details show its Unlock Path: the quests that unlock it, in order, with what is done and where to start. On a dungeon's quest list a chain-link badge marks quests that need earlier quests; a grey badge means the chain cannot be finished.
 - **Search.** Type part of a quest name to find it, with its zone and whether it is available to you.
 - **Right-click menu.** Right-click any quest to show it on the map, link it to chat, or ignore it.
+- **At the quest giver.** When a quest giver offers a quest the advisor recommends, a small "Recommended — take it" ribbon under the quest page says why (its list, zone route step or dungeon) and roughly how much XP it gives.
 - **Map pins.** Small gold-rimmed shields with ! (pick up) or ? (turn in) mark recommended quests on the world map; hover for details, click for a waypoint.
 
 ## Install
@@ -36,6 +40,7 @@ Release zips (`dist/LevelingAdvisor-<version>.zip`) already contain the `Levelin
 | `/advisor export` | Export recorder data |
 | `/advisor about` | Version and data sources |
 | `/advisor pins` | Count the map pins on the current map |
+| `/advisor guide on\|off\|continue` | The guide: a waypoint to your next step (on by default, per character). It pauses when you remove or replace its waypoint or use Show on Map; `continue` resumes it; `off` removes its waypoint |
 | `/advisor debug` | Diagnostics |
 | `/advisor help` | List the commands |
 
@@ -47,6 +52,9 @@ The book also has a key binding (Options > Key Bindings > AddOns > Leveling Advi
 - Recommend dungeons and their quests
 - Show pins for all recommended quest givers
 - Record quest data (local only)
+- Show minimap button
+- Mark recommended quests at quest givers
+- Guide: set a waypoint to the next step automatically (per character)
 
 ## Recorder and export
 

@@ -19,11 +19,16 @@ describe("main page, right side", function()
     local el = ns.UI.Model.questList(ns.Advisor.last.rec, {})
     local seq = {}
     for i, e in ipairs(el) do seq[i] = e.kind == "header" and e.key or e.row.questID end
-    assert.same({ "turnin", 4730, "here", 4763, 7003, "class", 5061, "next", 1010, 1007, 1100 }, seq)
+    -- Later starts collapsed: its header only
+    assert.same({ "turnin", 4730, "here", 4763, 7003, "class", 5061, "next", 1010, 1007, 1100, "later" }, seq)
+    local later = el[#el]
+    assert.same({ "later", 1, true }, { later.key, later.count, later.collapsed })
+    local open = ns.UI.Model.questList(ns.Advisor.last.rec, {}, true)
+    assert.same({ "later", 991 }, { open[#open - 1].key, open[#open].row.questID })
     assert.same({ "Ready to Turn In", 1, false, 26 }, { el[1].title, el[1].count, el[1].collapsed, el[1].height })
     assert.equal(44, el[2].height)
     assert.equal("turnin", el[2].sectionKey)
-    assert.equal(9, #ns.UI.Model.questList(ns.Advisor.last.rec, { here = true }))
+    assert.equal(10, #ns.UI.Model.questList(ns.Advisor.last.rec, { here = true }))
   end)
 
   it("questList with no sections gives the text element", function()
@@ -31,6 +36,18 @@ describe("main page, right side", function()
     local el = ns.UI.Model.questList({ sections = {} }, {})
     assert.same({ { kind = "text", text = "Nothing to do right here. Pick one of the recommended zones.", height = 40 } }, el)
     assert.equal(1, #ns.UI.Model.questList(nil, nil))
+  end)
+
+  it("questList with only the Later section shows the text above its header", function()
+    ns = ui.load({})
+    local rec = { sections = { { key = "later", title = "Later — too high for now",
+      rows = { { questID = 991 } } } } }
+    local el = ns.UI.Model.questList(rec, {})
+    assert.equal(2, #el)
+    assert.same({ kind = "text", text = "Nothing to do right here. Pick one of the recommended zones.", height = 40 }, el[1])
+    assert.same({ "header", "later", true }, { el[2].kind, el[2].key, el[2].collapsed })
+    local open = ns.UI.Model.questList(rec, {}, true)
+    assert.same({ "text", "header", "quest" }, { open[1].kind, open[2].kind, open[3].kind })
   end)
 
   it("sub lines", function()
@@ -119,7 +136,7 @@ describe("main page, right side", function()
 
   it("renders headers and rows in a ScrollBox", function()
     local box = open()
-    assert.equal(11, #box.rows)
+    assert.equal(12, #box.rows) -- 6 headers (Later last, collapsed) and 6 rows
     assert.equal("Ready to Turn In", box.rows[1].frame.laHeader.title:GetText())
     assert.equal("1", box.rows[1].frame.laHeader.count:GetText())
     local r = box.rows[2].frame.laQuest
@@ -183,10 +200,52 @@ describe("main page, right side", function()
     local box = open()
     fake.click(fake.text("Right Here").parent.parent)
     assert.is_true(ns.chardb.collapsed.here)
-    assert.equal(9, #box.rows)
+    assert.equal(10, #box.rows)
     fake.click(box.rows[3].frame)
     assert.is_nil(ns.chardb.collapsed.here)
-    assert.equal(11, #box.rows)
+    assert.equal(12, #box.rows)
+  end)
+
+  it("the Later header shows its count, starts collapsed, expands on click and persists", function()
+    local box = open()
+    local header = fake.text("Later — too high for now").parent.parent
+    assert.equal("1", header.laHeader.count:GetText())
+    assert.equal(12, #box.rows) -- 991 is not listed
+    assert.is_nil(fake.rowFrame(991))
+    fake.click(header)
+    assert.is_true(ns.chardb.ui.laterOpen)
+    assert.equal(13, #box.rows)
+    assert.is_truthy(fake.rowFrame(991))
+    -- a new session of the same character finds it open
+    open({ chardb = { ignored = {}, collapsed = {}, ui = { laterOpen = true } } })
+    assert.is_truthy(fake.rowFrame(991))
+    fake.click(fake.text("Later — too high for now").parent.parent)
+    assert.is_false(ns.chardb.ui.laterOpen)
+    assert.is_nil(fake.rowFrame(991))
+  end)
+
+  it("Later rows say when they get good", function()
+    open()
+    assert.equal("Good at level 19", sub(991))
+    local logged = ui.with("S18", { log = { [991] = { complete = false } } })
+    open({ state = logged })
+    assert.equal("In your log — better at level 19", sub(991))
+  end)
+
+  it("a Later row never gets the bright quest marker", function()
+    open()
+    ns.chardb.ui = { laterOpen = true }
+    ns.UI.refresh()
+    local row = fake.row(991)
+    assert.equal("available", row.state)
+    local marker = fake.rowFrame(991).laQuest.marker
+    assert.is_true(marker.desaturated)
+  end)
+
+  it("Why Now for a Later quest", function()
+    open()
+    assert.equal("Too high for now — good at level 19.",
+      ns.UI.QuestInfo.why(db, db:quest(991), state, { section = "later" }))
   end)
 
   it("a pooled frame reused for another kind hides the old parts", function()
@@ -232,5 +291,146 @@ describe("main page, right side", function()
   it("no errors while rendering", function()
     open()
     assert.same({}, env.errors)
+  end)
+
+  describe("guide controls", function()
+    local function btn(label)
+      return fake.find(function(w) return w.text == label end)
+    end
+
+    it("shows the toggle and Continue, the toggle labelled with the state", function()
+      open()
+      assert.is_truthy(btn("Guide: On"))
+      assert.is_truthy(btn("Continue with waypoint"))
+      assert.is_true(btn("Continue with waypoint"):IsEnabled())
+    end)
+
+    it("the toggle switches the guide and its label follows", function()
+      open()
+      fake.click(btn("Guide: On"), "LeftButton")
+      assert.is_false(ns.UI.Guide.enabled())
+      assert.is_nil(btn("Guide: On"))
+      assert.is_truthy(btn("Guide: Off"))
+      assert.is_false(btn("Continue with waypoint"):IsEnabled())
+      fake.click(btn("Guide: Off"), "LeftButton")
+      assert.is_true(ns.UI.Guide.enabled())
+      assert.is_true(btn("Continue with waypoint"):IsEnabled())
+    end)
+
+    it("the labels follow a change made elsewhere (menu or slash)", function()
+      open()
+      ns.UI.Guide.setEnabled(false)
+      assert.is_truthy(btn("Guide: Off"))
+      assert.is_false(btn("Continue with waypoint"):IsEnabled())
+    end)
+
+    it("reads Guide: Paused while paused; Continue stays on and the toggle turns it off", function()
+      open()
+      ns.MapPins.setWaypoint({ mapID = 1440, x = 10, y = 10, quests = { { name = "Elsewhere" } } })
+      ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+      assert.is_true(ns.UI.Guide.paused())
+      assert.is_nil(btn("Guide: On"))
+      assert.is_truthy(btn("Guide: Paused"))
+      assert.is_true(btn("Continue with waypoint"):IsEnabled())
+      fake.click(btn("Guide: Paused"), "LeftButton")
+      assert.is_false(ns.UI.Guide.enabled())
+      assert.is_truthy(btn("Guide: Off"))
+      fake.click(btn("Guide: Off"), "LeftButton")
+      assert.is_truthy(btn("Guide: On"))
+    end)
+
+    it("reads Guide: Paused when the book opens on a pause kept from an earlier session", function()
+      open({ chardb = { guideState = { paused = true, why = "replaced" } } })
+      assert.is_truthy(btn("Guide: Paused"))
+      fake.click(btn("Continue with waypoint"), "LeftButton")
+      assert.is_false(ns.UI.Guide.paused())
+      assert.is_truthy(btn("Guide: On"))
+    end)
+
+    it("Continue calls Guide.continue", function()
+      open()
+      local spy = ui.spy(ns.UI.Guide, "continue", function() end)
+      fake.click(btn("Continue with waypoint"), "LeftButton")
+      assert.equal(1, spy.n)
+    end)
+
+    it("starts with Guide: Off when the setting is off", function()
+      open({ chardb = { settings = { guide = false } } })
+      assert.is_truthy(btn("Guide: Off"))
+      assert.is_false(btn("Continue with waypoint"):IsEnabled())
+    end)
+
+    it("without the guide module the controls are hidden", function()
+      ns, env, fake = ui.load({ state = "S18" })
+      ns.UI.Guide = nil
+      ns.UI.open()
+      assert.is_nil(btn("Guide: On"))
+    end)
+
+    describe("layout", function()
+      local function point(w, name)
+        for _, p in ipairs(w.points) do if p[1] == name then return p end end
+      end
+      -- the list is the one frame hung from the pane's top-left at a negative offset
+      local function listOffset(right)
+        local found
+        fake.find(function(w)
+          local p = w.points and point(w, "TOPLEFT")
+          if p and p[2] == right and p[5] and p[5] < -20 and w.kind ~= "FontString" and w ~= right then
+            found = p[5]
+            return true
+          end
+        end)
+        return found
+      end
+
+      it("sits on its own row under the heading's rule, and the list below it", function()
+        open()
+        local heading = fake.find(function(w) return w.text == "Recommended Quests" end)
+        local toggle, cont = btn("Guide: On"), btn("Continue with waypoint")
+        -- sized from the text (the fake measures 6 px a character) + 24, at least 80 / 150;
+        -- the toggle fits its widest label, "Guide: Paused" (13 characters)
+        assert.same({ 13 * 6 + 24, 22 * 6 + 24 }, { toggle:GetWidth(), cont:GetWidth() })
+        local p = point(cont, "TOPRIGHT")
+        assert.equal(heading.rule, p[2])
+        assert.same({ "BOTTOMRIGHT", 0, -4 }, { p[3], p[4], p[5] })
+        assert.equal(cont, point(toggle, "RIGHT")[2])
+        local right = heading:GetParent()
+        assert.is_true(listOffset(right) <= -(28 + 4 + 22))
+      end)
+
+      it("a client that cannot measure the text gets 100 and 170 px", function()
+        ns, env, fake = ui.load({ state = "S18" })
+        local made = ns.UI.Style.button
+        ns.UI.Style.button = function(...)
+          local b = made(...)
+          b.GetFontString = function() return nil end
+          return b
+        end
+        ns.UI.open()
+        assert.same({ 100, 170 }, { btn("Guide: On"):GetWidth(), btn("Continue with waypoint"):GetWidth() })
+        assert.same({}, env.errors)
+      end)
+
+      it("short labels keep the minimum widths", function()
+        ns, env, fake = ui.load({ state = "S18" })
+        local made = ns.UI.Style.button
+        ns.UI.Style.button = function(...)
+          local b = made(...)
+          b.GetFontString = function() return { GetStringWidth = function() return 20 end } end
+          return b
+        end
+        ns.UI.open()
+        assert.same({ 80, 150 }, { btn("Guide: On"):GetWidth(), btn("Continue with waypoint"):GetWidth() })
+      end)
+
+      it("without the guide module the list keeps its old offset", function()
+        ns, env, fake = ui.load({ state = "S18" })
+        ns.UI.Guide = nil
+        ns.UI.open()
+        local heading = fake.find(function(w) return w.text == "Recommended Quests" end)
+        assert.equal(-28, listOffset(heading:GetParent()))
+      end)
+    end)
   end)
 end)

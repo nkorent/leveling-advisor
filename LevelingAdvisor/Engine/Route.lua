@@ -2,6 +2,9 @@ local _, ns = ...
 
 -- Greedy zone route: an ordered list of hub stops (steps). Pure Lua.
 -- The result is then improved by RouteImprove unless opts.improve == false.
+-- It visits only quests the engine recommends (Candidates.recommendable:
+-- yellow and green quests, plus turn-ins at any colour); chain follow-ups it
+-- adds must fit the player's level too.
 local Route = {}
 ns.Route = Route
 
@@ -72,7 +75,8 @@ local function depsMet(entries, deps)
 end
 
 -- Quests of this zone that fail eligibility only with `prereq` and would pass
--- once their missing prerequisites are done. Independent of the route.
+-- once their missing prerequisites are done, and that fit the player's level
+-- (an orange follow-up waits in Later). Independent of the route.
 local function chainCandidates(db, state, mapID, entries)
   local out = {}
   local completed = state.completed or {}
@@ -100,7 +104,8 @@ local function chainCandidates(db, state, mapID, entries)
           if not ok then any = list; overlay[list[1]] = true end
         end
         setmetatable(overlay, { __index = completed })
-        if ns.Eligibility.check(db, q, copyState(state, overlay)) == "eligible" then
+        if ns.Eligibility.check(db, q, copyState(state, overlay)) == "eligible"
+            and ns.Candidates.fits(ns.Candidates.fitOf(q, state)) then
           out[#out + 1] = { quest = q, all = all, any = any }
         end
       end
@@ -157,8 +162,7 @@ local function routeQuests(db, state, mapID, candidates, opts)
   local entries = {}
   for _, c in ipairs(candidates or {}) do
     local q = c.quest
-    if (c.status == "eligible" or c.status == "progress" or c.status == "complete")
-        and not entries[q.id] then
+    if ns.Candidates.recommendable(c) and not entries[q.id] then
       entries[q.id] = makeEntry(q, c.status, mapID, opts.dungeonKey)
     end
   end

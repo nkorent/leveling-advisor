@@ -42,8 +42,8 @@ def test_layers_apply_in_order(qdb):
     assert list(qdb.stats["layers"]["Quest"]) == ["legacy", "generated", "traces", "relation-traces", "authored"]
     assert list(qdb.stats["layers"]["Npc"]) == ["legacy", "generated", "traces", "authored"]
     assert qdb.stats["layers"]["Quest"]["traces"]["rows"] == 3
-    assert qdb.stats["raw"] == {"Quest": 19, "Npc": 7, "Object": 1}
-    assert qdb.stats["final"] == {"Quest": 20, "Npc": 9, "Object": 2}
+    assert qdb.stats["raw"] == {"Quest": 19, "Npc": 7, "Object": 1, "Item": 3}
+    assert qdb.stats["final"] == {"Quest": 20, "Npc": 9, "Object": 2, "Item": 4}
 
 
 def test_add_remove_operations(qdb):
@@ -167,6 +167,41 @@ def test_item_start_and_repeatable_raw_fields(qdb):
     assert q["starter_items"] == [9000] and q["starter_npcs"] is None and q["repeatable"] is True
 
 
+def test_items_read_through_every_layer(qdb):
+    """Task 8: Item name, npcDrops and objectDrops, through the same layers as the other types."""
+    assert list(qdb.stats["layers"]["Item"]) == ["legacy", "generated", "traces", "authored"]
+    # raw {99, 10}, legacy adds 11, traces remove 10
+    assert qdb.items[2001] == {"name": "Gnoll Paw", "npc_drops": [99, 11], "object_drops": []}
+    # created by the generated layer (it carries a name), renamed by the authored one
+    assert qdb.items[2002] == {"name": "Forever Charm of Testing", "npc_drops": [12], "object_drops": [5000]}
+    assert ("Item", 2002, "generated") in qdb.stats["created"]
+    assert qdb.items[9000] == {"name": "Starting Letter", "npc_drops": [], "object_drops": []}   # {} clears
+    assert 2003 not in qdb.items and ("Item", 2003, "authored") in qdb.stats["skipped"]
+    # Alliance and Horde give Faction Spice different drops: the static value stays
+    assert qdb.items[2004]["npc_drops"] == [13]
+    assert ("Item", 2004, "npcDrops") in qdb.stats["dynamic_not_applied"]
+    assert 2003 not in qdb.quest_problems                  # an item row never makes a quest problem
+
+
+def test_quest_objective_rows(qdb):
+    """Task 8: every objective row with its group, id and own text (field 26 is built from them)."""
+    assert qdb.quests[200]["objectives"] == [{"group": 1, "id": 1001, "text": "Slay the thing"},
+                                             {"group": 3, "id": 2001, "text": None}]
+    assert qdb.quests[100]["objectives"] == []
+
+
+def test_data_key_table_may_lack_only_trailing_meta_keys(tmp_path):
+    """The real item data predates the meta's last key (teachesSpell): allowed. A key missing in the
+    middle (or a different index) still fails."""
+    root = tmp_root(tmp_path)
+    data = root / "data/Forever/foreverItemDB.lua"
+    text = data.read_text(encoding="utf-8")
+    assert "['flags'] = 7" in text
+    data.write_text(text.replace("    ['flags'] = 7, -- int or nil\n", ""), encoding="utf-8")
+    with pytest.raises(ValueError, match="itemKeys"):
+        load_questiedb(root, BLACKLIST)
+
+
 def test_quest_xp_traces_override_classic(qdb):
     assert qdb.xp == {100: (8, 400), 200: (10, 520), 300: (12, 700)}
 
@@ -276,13 +311,21 @@ def real():
 def test_real_questiedb_smoke(real):
     for dt, layers in (("Quest", ["legacy", "generated", "traces", "relation-traces", "authored"]),
                        ("Npc", ["legacy", "generated", "traces", "authored"]),
-                       ("Object", ["legacy", "generated", "traces", "authored"])):
+                       ("Object", ["legacy", "generated", "traces", "authored"]),
+                       ("Item", ["legacy", "generated", "traces", "authored"])):
         assert list(real.stats["layers"][dt]) == layers
         assert all(real.stats["layers"][dt][layer]["rows"] > 0 for layer in layers), dt
     assert len(real.quests) >= 4000 and len(real.npcs) >= 8000
     assert real.quests[272]["race_mask"] == 8 + SKYBORNE_ALLIANCE     # Night Elf + Skyborne, before conversion
     assert real.stats["rejected"] == []
     assert real.xp and all(len(v) == 2 for v in real.xp.values())
+    # Task 8: items with their drop sources (the authored layer removes four Forever wolves from 750)
+    assert len(real.items) >= 10000
+    assert real.items[750]["name"] == "Tough Wolf Meat" and real.items[750]["npc_drops"]
+    assert not {238425, 238426, 238427, 247809} & set(real.items[750]["npc_drops"])
+    assert real.items[3910]["name"] == "Snuff"
+    assert real.quests[33]["objectives"] == [{"group": 3, "id": 750, "text": None}]
+    assert real.quests[587]["objectives"] == [{"group": 3, "id": 3910, "text": None}]
 
 
 @pytest.mark.skipif(not REAL_OOG_NPCS.is_dir(), reason="no outof.games NPC crawl output")
