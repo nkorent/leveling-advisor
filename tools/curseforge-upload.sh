@@ -40,8 +40,16 @@ metadata="$(jq -n --arg c "$changelog" --arg d "$display" --arg r "$release_type
   '{changelog: $c, changelogType: "markdown", displayName: $d, gameVersions: [$v], releaseType: $r}')"
 
 echo "upload: $display -> project $CF_PROJECT_ID, game version $CF_GAME_VERSION ($version_id), $release_type"
-curl -fsS -H "X-Api-Token: $CF_API_KEY" \
-  -F "metadata=$metadata" \
+# --form-string sends the metadata as is: with -F, curl treats ";" in the value (e.g. in the
+# changelog) as the start of a field option and cuts the JSON there (CurseForge answers 400).
+response="$(mktemp)"
+trap 'rm -f "$response"' EXIT
+status="$(curl -sS -o "$response" -w '%{http_code}' -H "X-Api-Token: $CF_API_KEY" \
+  --form-string "metadata=$metadata" \
   -F "file=@$zip" \
-  "$API/projects/$CF_PROJECT_ID/upload-file"
-echo
+  "$API/projects/$CF_PROJECT_ID/upload-file")"
+cat "$response"; echo
+case "$status" in
+  2??) ;;
+  *) echo "upload: CurseForge answered HTTP $status (body above)" >&2; exit 1 ;;
+esac
