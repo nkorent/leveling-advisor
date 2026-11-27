@@ -9,7 +9,7 @@ local W = 360
 local GAP = 10
 local GIVER_H, BUTTON_H = 56, 26
 local HEADING_H = 24
-local ORDER = { "head", "giver", "map", "why", "objective", "items", "actions" }
+local ORDER = { "head", "giver", "unlock", "map", "why", "objective", "items", "actions" }
 
 local function fill(frame, r, g, b, a)
   local tex = frame:CreateTexture(nil, "BACKGROUND")
@@ -61,7 +61,7 @@ local function buildGiver(frame)
   g.status = Style.text(frame, "GameFontNormalSmall", Style.INK_SOFT)
   g.status:SetPoint("TOPLEFT", frame, "TOPLEFT", 30, -38)
   g.status:SetWidth(W - 30 - 44)
-  g.status:SetWordWrap(false)
+  g.status:SetWordWrap(true) -- "Needs 4 earlier quests first. Start with ..." takes two lines
   g.pin = Style.pinButton(frame, nil)
   g.pin:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
   return g
@@ -149,7 +149,7 @@ local function renderGiver(d, m)
   g.title:SetText(m.giver.title or "")
   g.coords:SetText(m.giver.coords or "")
   g.status:SetText(m.giver.status or "")
-  setSection(d, "giver", GIVER_H)
+  setSection(d, "giver", math.max(GIVER_H, 38 + height(g.status) + 6))
 end
 
 local function renderBlock(d, name, text)
@@ -258,8 +258,13 @@ function QuestDetail.new(parent)
   d.content:SetSize(W, 1)
   d.scroll:SetScrollChild(d.content)
 
+  -- UI/UnlockPath.lua is new in this version: without a client restart it is not loaded, and
+  -- the page goes without the section (height 0).
+  local UnlockPath = UI.UnlockPath
   local builders = {
     head = buildHead, giver = buildGiver,
+    unlock = type(UnlockPath) == "table" and type(UnlockPath.new) == "function"
+      and function(f) return UnlockPath.new(f) end or nil,
     why = function(f) return buildBlock(f, "Why Now") end,
     objective = function(f) return buildBlock(f, "Objective") end,
     items = buildItems,
@@ -281,6 +286,13 @@ function QuestDetail.new(parent)
   d.message:SetWordWrap(true)
   d.message:Hide()
 
+  -- Show all in the Unlock Path changes its height
+  if d.parts.unlock then
+    d.parts.unlock.onResize = function(h)
+      setSection(d, "unlock", h)
+      layout(d)
+    end
+  end
   d.parts.head.hit:SetScript("OnClick", function(self, button)
     UI.Menu.handleClick(self, d.questID, button)
   end)
@@ -313,8 +325,11 @@ function QuestDetail.new(parent)
     local sameQuest = self.questID == questID
     self.questID, self.db, self.state, self.model = questID, ctx.db, ctx.state, m
     self.message:Hide()
+    local unlock = self.parts.unlock
+    if unlock and not sameQuest then unlock:reset() end
     renderHead(self, m)
     renderGiver(self, m)
+    setSection(self, "unlock", unlock and unlock:render(m.unlock, m, ctx.db, ctx.state) or 0)
     renderMap(self, m)
     renderBlock(self, "why", m.why)
     renderBlock(self, "objective", m.objective)

@@ -13,7 +13,7 @@ local DIR = ADDON
 
 local FILES = {
   "Core/DB.lua", "Engine/Tuning.lua", "Engine/Difficulty.lua", "Engine/XP.lua",
-  "Engine/Geo.lua", "Engine/Eligibility.lua", "Engine/Hubs.lua",
+  "Engine/Geo.lua", "Engine/Eligibility.lua", "Engine/Unlock.lua", "Engine/Hubs.lua",
   "Engine/Travel.lua", "Engine/Candidates.lua", "Engine/ZoneScore.lua",
   "Engine/Sections.lua", "Engine/Dungeons.lua", "Engine/Route.lua",
   "Engine/RouteImprove.lua", "Engine/Engine.lua",

@@ -463,7 +463,7 @@ def test_failed_build_leaves_previous_data_and_no_staging(tmp_path, monkeypatch)
     before = {p.name: p.read_bytes() for p in out.iterdir()}
     report.unlink()
 
-    def boom(quests, p):
+    def boom(quests, p, stubs=None):
         Path(p).write_text("partial", encoding="utf-8")
         raise RuntimeError("emit failed")
     monkeypatch.setattr(b, "emit_quests", boom)

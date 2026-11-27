@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 (beta), 2026-11-27
+
+- **Restart the game after updating** (this version adds new files; /reload is not enough).
+- **Unlock Path:** a quest's details show the chain of quests that unlock it, in order, with what is done, where to start, and the XP on the way. Long chains fold their done steps.
+- **Chain badge:** on a dungeon's quest list, a chain-link icon marks quests that need earlier quests, with how many are left.
+- Prerequisite quests that the advisor does not recommend (for example ones started from an item) still appear in the chain by name.
+- **Chain n/m** now counts the same quests as the Unlock Path.
+- **Fixed:** a Lua error after every recompute while the world map had not been opened yet.
+
 ## 0.1.0 (beta), 2026-11-26
 
 First public beta for WoW: Forever (1.60.1).

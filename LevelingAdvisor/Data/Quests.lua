@@ -3942,3 +3942,260 @@ t[99260] = {"Fillion's Mission", 1, nil, nil, 5, 10, 1, 2521, 12, nil, {1, 25328
 t[99411] = {"Kyle's Gone Missing!", 2, nil, nil, 5, 7, 1, 1412, 12, nil, {1, 277182, 1412, 47.3, 57.6}, {1, 277182, 1412, 47.3, 57.6}, {{1412, 46.3, 62.3}}, "Ahab Wheathoof at Bloodhoof Village in Mulgore wants you to feed his prized puppy, Kyle the Frenzied.\nFeed Kyle Tender Strider Meat and return to Ahab Wheathoof.", nil, {money = 175, rep = {{"Thunder Bluff", 100}}}, 625, 1}
 t[99670] = {"Return to Jereman", 3, nil, nil, 54, 60, 1, 2482, 12, nil, {1, 40833, 2482, 68.9, 50.6}, {1, 267158, 2482, 41.3, 45.3}, nil, "Return to Jereman at the Cradle of Tranquility.", nil, {choice = {{275738, 1}}, rep = {{"Guardians of Hyjal", 150}}}, 75, 1}
 end)
+
+local questStubs = {}
+ns.Data.questStubs = questStubs
+local function questStubsBlock(fill) fill(questStubs) end
+
+questStubsBlock(function(t)
+t[2] = {"Sharptalon's Claw", 30, 20, 2, nil, nil, {all = {6383}}, {kind = 3}, "no-giver-coords"}
+t[23] = {"Ursangous's Paw", 24, 20, 2, nil, nil, {all = {6383}}, {kind = 3}, "no-giver-coords"}
+t[24] = {"Shadumbra's Head", 27, 20, 2, nil, nil, {all = {6383}}, {kind = 3}, "no-giver-coords"}
+t[123] = {"The Collector", 10, 7, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[136] = {"Captain Sander's Hidden Treasure", 16, 10, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[337] = {"An Old History Book", 25, 20, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[351] = {"Find OOX-17/TN!", 48, 43, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[373] = {"The Unsent Letter", 22, 16, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[460] = {"Resting in Pieces", 17, 12, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[484] = {"Young Crocolisk Skins", 22, 18, 1, nil, nil, nil, {kind = 1, name = "James Halloran", mapID = 1437}, "needs-rep"}
+t[485] = {"Find OOX-09/HL!", 48, 43, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[522] = {"Assassin's Contract", 38, 30, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[551] = {"The Ensorcelled Parchment", 40, 30, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[594] = {"Message in a Bottle", 45, 45, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[624] = {"Cortello's Riddle", 43, 35, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[637] = {"Sully Balloo's Letter", 30, 25, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[654] = {"Tanaris Field Sampling", 46, 38, 2, nil, nil, {all = {379}}, {kind = 3}, "no-giver-coords"}
+t[687] = {"Theldurin the Lost", 40, 30, 1, nil, nil, {any = {653, 688}}, {kind = 1, name = "Gerrig Bonegrip", mapID = 1455}, "prereq-unclear"}
+t[787] = {"The New Horde", 1, 1, 2, nil, nil, nil, {kind = 1, name = "Eitrigg", mapID = 1454}, "questie-hidden"}
+t[794] = {"Burning Blade Medallion", 5, 1, 2, nil, nil, {any = {792, 1499}}, {kind = 1, name = "Zureetha Fargaze", mapID = 1411}, "prereq-unclear"}
+t[819] = {"Chen's Empty Keg", 15, 11, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[830] = {"The Admiral's Orders", 7, 1, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[927] = {"The Moss-twined Heart", 12, 5, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[934] = {"Crown of the Earth", 11, 1, 1, nil, nil, nil, nil, "questie-hidden"}
+t[935] = {"Crown of the Earth", 11, nil, 1, nil, nil, {all = {7383, 934}}, {kind = 1, name = "Corithras Moonrage", mapID = 1438}, "no-data"}
+t[936] = {"Assisting Arch Druid Runetotem", 50, 47, 2, nil, nil, nil, {kind = 1, name = "Innkeeper Gryshka", mapID = 1454}, "questie-hidden"}
+t[939] = {"Flute of Xavaric", 54, 49, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[1100] = {"Lonebrow's Journal", 34, 29, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[1123] = {"Rabine Saturna", 55, 54, 2, nil, nil, {any = {1000, 1004, 1018}}, {kind = 1, name = "Arch Druid Hamuul Runetotem", mapID = 1456}, "prereq-unclear"}
+t[1124] = {"Wasteland", 55, 54, 3, nil, nil, {any = {1123, 6762}}, {kind = 1, name = "Rabine Saturna", mapID = 1450}, "prereq-unclear"}
+t[1148] = {"Parts of the Swarm", 35, 28, 2, nil, nil, {all = {1146, 1147}}, {kind = 3}, "no-giver-coords"}
+t[1252] = {"Lieutenant Paval Reethe", 40, 30, 1, nil, nil, {any = {1302, 1282}}, {kind = 2, name = "Theramore Guard Badge", mapID = 1445}, "prereq-unclear"}
+t[1253] = {"The Black Shield", 35, 30, 1, nil, nil, {any = {1302, 1282}}, {kind = 2, name = "Black Shield", mapID = 1445}, "prereq-unclear"}
+t[1369] = {"Broken Tears", 33, 30, 3, nil, nil, {any = {1367, 1386}}, {kind = 1, name = "Warug", mapID = 1443}, "prereq-unclear"}
+t[1370] = {"Stealing Supplies", 35, 30, 3, nil, nil, {any = {1368, 1384}}, {kind = 1, name = "Uthek the Wise", mapID = 1443}, "prereq-unclear"}
+t[1373] = {"Ongeku", 37, 30, 3, nil, nil, {all = {1370}}, {kind = 1, name = "Uthek the Wise", mapID = 1443}, "needs-rep"}
+t[1384] = {"Raid on the Kolkar", 32, 30, 1, nil, nil, {all = {1382}}, {kind = 1, name = "Uthek the Wise", mapID = 1443}, "needs-rep"}
+t[1386] = {"Assault on the Kolkar", 32, 30, 1, nil, nil, {all = {1385}}, {kind = 1, name = "Warug", mapID = 1443}, "needs-rep"}
+t[1472] = {"Devourer of Souls", nil, 20, 2, nil, 256, nil, {kind = 1, name = "Carendin Halgar", mapID = 1458}, "no-data"}
+t[1476] = {"Hearts of the Pure", nil, 20, 2, nil, 256, {all = {1472}}, {kind = 1, name = "Godrick Farsan", mapID = 1458}, "no-data"}
+t[1480] = {"The Corrupter", 33, 25, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[1499] = {"Vile Familiars", 4, 1, 2, nil, 256, {any = {1470, 1485}}, {kind = 1, name = "Ruzan", mapID = 1411}, "prereq-unclear"}
+t[1502] = {"Thun'grim Firegaze", 10, 10, 2, nil, 1, {any = {1498, 1819}}, {kind = 1, name = "Uzzek", mapID = 1413}, "prereq-unclear"}
+t[1507] = {"Devourer of Souls", nil, 20, 2, nil, 256, nil, {kind = 1, name = "Gan'rul Bloodeye", mapID = 1454}, "no-data"}
+t[1508] = {"Blind Cazul", nil, 20, 2, nil, 256, {all = {1507}}, {kind = 1, name = "Cazul", mapID = 1454}, "no-data"}
+t[1517] = {"Call of Earth", nil, 4, 2, nil, 64, {any = {1516, 1519}}, {kind = 1, name = "Canaga Earthcaller", mapID = 1411}, "no-data"}
+t[1520] = {"Call of Earth", nil, 4, 2, nil, 64, {any = {1516, 1519}}, {kind = 1, name = "Seer Ravenfeather", mapID = 1412}, "no-data"}
+t[1640] = {"Beat Bartleby", 10, 10, 1, nil, 1, {any = {1639, 1678, 1683}}, {kind = 1, name = "Bartleby", mapID = 1453}, "prereq-unclear"}
+t[1642] = {"The Tome of Divinity", 12, 12, 1, 1, 2, {all = {1641, 2998, 3681}}, {kind = 3}, "no-giver-coords"}
+t[1646] = {"The Tome of Divinity", 12, 12, 1, 4, 2, {all = {1645, 2997, 2999, 3000}}, {kind = 3}, "no-giver-coords"}
+t[1649] = {"The Tome of Valor", 20, 20, 1, 5, 2, {all = {1793, 1794}}, {kind = 3}, "no-giver-coords"}
+t[1680] = {"Tormus Deepforge", 11, 10, 1, nil, 1, {any = {1683, 1678, 1639}}, {kind = 1, name = "Muren Stormpike", mapID = 1455}, "prereq-unclear"}
+t[1681] = {"Ironband's Compound", 11, 10, 1, nil, 1, {all = {1680}, any = {1683, 1678, 1639}}, {kind = 1, name = "Tormus Deepforge", mapID = 1455}, "prereq-unclear"}
+t[1686] = {"The Shade of Elura", 10, 10, 1, nil, 1, {any = {1683, 1678, 1639}}, {kind = 1, name = "Elanaria", mapID = 1457}, "prereq-unclear"}
+t[1716] = {"Devourer of Souls", nil, 20, 1, nil, 256, nil, {kind = 1, name = "Gakin the Darkbinder", mapID = 1453}, "no-data"}
+t[1820] = {"Speak with Coleman", 10, 10, 2, nil, 1, {any = {1498, 1819}}, {kind = 1, name = "Deathguard Dillinger", mapID = 1420}, "prereq-unclear"}
+t[1821] = {"Agamand Heirlooms", 11, 10, 2, nil, 1, {all = {1820}, any = {1498, 1819}}, {kind = 1, name = "Coleman Farthing", mapID = 1420}, "prereq-unclear"}
+t[1918] = {"The Befouled Element", 27, 23, 2, nil, nil, {all = {25}}, {kind = 3}, "no-giver-coords"}
+t[2198] = {"The Shattered Necklace", 41, 37, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[2201] = {"Find the Gems", 43, 37, 1, nil, nil, {all = {2200}}, {kind = 1, name = "Remains of a Paladin"}, "no-giver-coords"}
+t[2204] = {"Restoring the Necklace", 44, 37, 1, nil, nil, {all = {2201}}, {kind = 2, name = "Talvash's Scrying Bowl"}, "no-giver-coords"}
+t[2278] = {"The Platinum Discs", 47, 40, 3, nil, nil, nil, {kind = 2, name = "The Discs of Norgannon"}, "no-giver-coords"}
+t[2279] = {"The Platinum Discs", 47, 40, 1, nil, nil, {all = {2278}}, {kind = 2, name = "The Discs of Norgannon"}, "no-giver-coords"}
+t[2280] = {"The Platinum Discs", 47, 40, 2, nil, nil, {all = {2278}}, {kind = 2, name = "The Discs of Norgannon"}, "no-giver-coords"}
+t[2318] = {"Translating the Journal", 42, 37, 2, nil, nil, {all = {2284}}, {kind = 1, name = "Remains of a Paladin"}, "no-giver-coords"}
+t[2766] = {"Find OOX-22/FE!", 45, 40, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[2801] = {"A Tale of Sorrow", 57, 45, 3, nil, nil, {any = {2623, 2783}}, {kind = 1, name = "Fallen Hero of the Horde", mapID = 1435}, "prereq-unclear"}
+t[2945] = {"Grime-Encrusted Ring", 34, 28, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[2947] = {"Return of the Ring", 34, 28, 1, nil, nil, {all = {2945}}, {kind = 2, name = "The Sparklematic 5200"}, "no-giver-coords"}
+t[2949] = {"Return of the Ring", 34, 28, 2, nil, nil, {all = {2945}}, {kind = 2, name = "The Sparklematic 5200"}, "no-giver-coords"}
+t[2954] = {"The Stone Watcher", 50, 45, 3, nil, nil, {any = {2946, 2966}}, {kind = 1, name = "Stone Watcher of Norgannon", mapID = 1446}, "prereq-unclear"}
+t[2978] = {"The Gordunni Scroll", 43, 38, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[3181] = {"The Horn of the Beast", 48, 40, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[3373] = {"The Essence of Eranikus", 55, 48, 3, nil, nil, nil, nil, "no-giver-coords"}
+t[3374] = {"The Essence of Eranikus", 55, 48, 3, nil, nil, {all = {3373}}, {kind = 3}, "no-giver-coords"}
+t[3444] = {"The Stone Circle", 51, 46, 3, nil, nil, {any = {3380, 3445}}, {kind = 1, name = "Marvon Rivetseeker", mapID = 1446}, "prereq-unclear"}
+t[3450] = {"An Easy Pickup", 52, 45, 1, nil, nil, nil, {kind = 1, name = "Tymor", mapID = 1455}, "parent-quest"}
+t[3513] = {"The Runed Scroll", 25, 15, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[3982] = {"What Is Going On?", 54, 48, 2, nil, nil, {all = {3981}}, {kind = 1, name = "Commander Gor'shak"}, "no-giver-coords"}
+t[4001] = {"What Is Going On?", 54, 48, 2, nil, nil, {all = {3982}}, {kind = 1, name = "Commander Gor'shak"}, "no-giver-coords"}
+t[4242] = {"Abandoned Hope", 54, 48, 1, nil, nil, {all = {4241}}, {kind = 1, name = "Marshal Windsor"}, "no-giver-coords"}
+t[4264] = {"A Crumpled Up Note", 58, 50, 1, nil, nil, {all = {4242}}, {kind = 3}, "no-giver-coords"}
+t[4282] = {"A Shred of Hope", 58, 50, 1, nil, nil, {all = {4264}}, {kind = 1, name = "Marshal Windsor"}, "no-giver-coords"}
+t[4322] = {"Jail Break!", 58, 50, 1, nil, nil, {all = {4282}}, {kind = 1, name = "Marshal Windsor"}, "no-giver-coords"}
+t[4342] = {"Kharan's Tale", 59, 50, 1, nil, nil, {all = {4341}}, {kind = 1, name = "Kharan Mighthammer"}, "no-giver-coords"}
+t[4361] = {"The Bearer of Bad News", 59, 50, 1, nil, nil, {all = {4342}}, {kind = 1, name = "Kharan Mighthammer"}, "no-giver-coords"}
+t[4494] = {"March of the Silithid", 53, 50, 2, nil, nil, {any = {32, 7732}}, {kind = 1, name = "Zilzibin Drumlore", mapID = 1454}, "prereq-unclear"}
+t[4496] = {"Bungle in the Jungle", 53, 50, 3, nil, nil, {any = {4493, 4494}}, {kind = 1, name = "Alchemist Pestlezugg", mapID = 1446}, "prereq-unclear"}
+t[4881] = {"Assassination Plot", 28, 23, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[4882] = {"Guarding Secrets", 59, 52, 2, nil, nil, {all = {4741}}, {kind = 3}, "no-giver-coords"}
+t[5001] = {"Bijou's Belongings", 59, 55, 1, nil, nil, nil, {kind = 1, name = "Bijou"}, "no-giver-coords"}
+t[5002] = {"Message to Maxwell", 59, 55, 1, nil, nil, {all = {5001}}, {kind = 1, name = "Bijou"}, "no-giver-coords"}
+t[5047] = {"Pip Quickwit, At Your Service!", 60, 55, 3, nil, nil, nil, {kind = 1, name = "Pip Quickwit"}, "no-giver-coords"}
+t[5050] = {"Good Luck Charm", 52, 50, 1, nil, nil, {any = {5048, 5049}}, {kind = 1, name = "Ol' Emma", mapID = 1453}, "prereq-unclear"}
+t[5083] = {"Winterfall Firewater", 56, 52, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[5089] = {"General Drakkisath's Command", 60, 55, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[5123] = {"The Final Piece", 59, 52, 3, nil, nil, {all = {5087}}, {kind = 3}, "no-giver-coords"}
+t[5160] = {"The Matron Protectorate", 60, 57, 3, nil, nil, nil, {kind = 1, name = "Awbee"}, "no-giver-coords"}
+t[5202] = {"A Strange Red Key", 55, 49, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[5262] = {"The Truth Comes Crashing Down", 60, 55, 3, nil, nil, {all = {5251}}, {kind = 3}, "no-giver-coords"}
+t[5464] = {"Menethil's Gift", 60, 57, 3, nil, nil, {all = {5463}}, {kind = 2, name = "Menethil's Gift"}, "no-giver-coords"}
+t[5721] = {"The Battle of Darrowshire", 60, 55, 3, nil, nil, {all = {5941}}, {kind = 1, name = "Chromie", mapID = 1422}, "raid"}
+t[6072] = {"The Hunter's Path", 10, 10, 1, 8, 4, nil, {kind = 1, name = "Ayanna Everstride", mapID = 1438}, "questie-hidden"}
+t[6402] = {"Stormwind Rendezvous", 60, 50, 1, nil, nil, {all = {4322}}, {kind = 1, name = "Marshal Maxwell", mapID = 1428}, "raid"}
+t[6403] = {"The Great Masquerade", 60, 50, 1, nil, nil, {all = {6402}}, {kind = 1, name = "Reginald Windsor", mapID = 1453}, "raid"}
+t[6501] = {"The Dragon's Eye", 60, 50, 1, nil, nil, {all = {6403}}, {kind = 1, name = "Highlord Bolvar Fordragon", mapID = 1453}, "raid"}
+t[6522] = {"An Unholy Alliance", 36, 28, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[6564] = {"Allegiance to the Old Gods", 22, 17, 2, nil, nil, {all = {6563}}, {kind = 3}, "no-giver-coords"}
+t[6582] = {"The Test of Skulls, Scryer", 60, 55, 2, nil, nil, {all = {6570}}, {kind = 1, name = "Emberstrife", mapID = 1445}, "raid"}
+t[6583] = {"The Test of Skulls, Somnus", 60, 55, 2, nil, nil, {all = {6570}}, {kind = 1, name = "Emberstrife", mapID = 1445}, "raid"}
+t[6584] = {"The Test of Skulls, Chronalis", 60, 55, 2, nil, nil, {all = {6570}}, {kind = 1, name = "Emberstrife", mapID = 1445}, "raid"}
+t[6585] = {"The Test of Skulls, Axtroz", 60, 55, 2, nil, nil, {all = {6582, 6583, 6584}}, {kind = 1, name = "Emberstrife", mapID = 1445}, "raid"}
+t[6606] = {"A Little Luck", 60, 55, 2, nil, nil, nil, {kind = 1, name = "Harlo Wigglesworth", mapID = 1452}, "questie-hidden"}
+t[6681] = {"The Manor, Ravenholdt", 24, 24, 3, nil, 8, nil, {kind = 3}, "no-giver-coords"}
+t[6761] = {"The New Frontier", 55, 54, 1, nil, nil, {any = {1015, 1019, 1047}}, {kind = 1, name = "Arch Druid Fandral Staghelm", mapID = 1457}, "prereq-unclear"}
+t[6821] = {"Eye of the Emberseer", 60, 56, 3, nil, nil, {all = {6804, 6805}}, {kind = 1, name = "Duke Hydraxis", mapID = 1447}, "raid"}
+t[6822] = {"The Molten Core", 60, 57, 3, nil, nil, {all = {6821}}, {kind = 1, name = "Duke Hydraxis", mapID = 1447}, "raid"}
+t[6824] = {"Hands of the Enemy", 60, 60, 3, nil, nil, {all = {6823}}, {kind = 1, name = "Duke Hydraxis", mapID = 1447}, "raid"}
+t[6981] = {"The Glowing Shard", 26, 15, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[7224] = {"Enemy Booty", 60, 51, 2, nil, nil, nil, {kind = 1, name = "Smith Regzar", mapID = 1459}, "pvp"}
+t[7490] = {"Victory for the Horde", 60, 60, 2, nil, nil, {all = {6602}}, {kind = 3}, "no-giver-coords"}
+t[7495] = {"Victory for the Alliance", 60, 60, 1, nil, nil, {all = {6502}}, {kind = 3}, "no-giver-coords"}
+t[7624] = {"Ulathek the Traitor", 58, 60, 3, nil, 256, {all = {7623}}, {kind = 1, name = "Lord Banehollow", mapID = 1448}, "giver-faction-unknown"}
+t[7625] = {"Xorothian Stardust", 60, 60, 3, nil, 256, {all = {7624}}, {kind = 1, name = "Lord Banehollow", mapID = 1448}, "giver-faction-unknown"}
+t[7632] = {"The Ancient Leaf", 60, 60, 3, nil, 4, nil, {kind = 1, name = "Majordomo Executus"}, "no-giver-coords"}
+t[7637] = {"Emphasis on Sacrifice", nil, 60, 1, 5, 2, {all = {7638, 7670}}, {kind = 1, name = "Lord Grayson Shadowbreaker", mapID = 1453}, "no-data"}
+t[7644] = {"Blessed Arcanite Barding", 60, 60, 1, 5, 2, {all = {7643}}, {kind = 1, name = "Ancient Equine Spirit"}, "no-giver-coords"}
+t[7781] = {"The Lord of Blackrock", 60, 60, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[7783] = {"The Lord of Blackrock", 60, 60, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[8152] = {"Rapid Escape", nil, nil, 3, nil, nil, {all = {7790}}, {kind = 2, name = "Argent Wayfinder", mapID = 1423}, "correction-skipped"}
+t[8288] = {"Only One May Rise", 60, 60, 3, nil, nil, {all = {8286}}, {kind = 1, name = "Baristolth of the Shifting Sands", mapID = 1451}, "raid"}
+t[8412] = {"Spirit Totem", 52, 50, 2, nil, 64, {any = {8410, 8411}}, {kind = 1, name = "Bath'rah the Windwatcher", mapID = 1416}, "prereq-unclear"}
+t[8421] = {"The Wrong Stuff", 52, 50, 3, nil, 256, {any = {8419, 8420}}, {kind = 1, name = "Impsy", mapID = 1448}, "prereq-unclear"}
+t[8446] = {"Shrouded in Nightmare", 60, 60, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[8552] = {"The Monogrammed Sash", 50, 40, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[8921] = {"The Ectoplasmic Distiller", 60, 58, 3, nil, nil, {any = {8922, 8923}}, {kind = 1, name = "Mux Manascrambler", mapID = 1446}, "prereq-unclear"}
+t[8922] = {"A Supernatural Device", 60, 58, 1, nil, nil, {any = {8905, 8906, 8907, 8908, 8909, 8910, 8911, 8912}}, {kind = 1, name = "Deliana", mapID = 1455}, "prereq-unclear"}
+t[8923] = {"A Supernatural Device", 60, 58, 2, nil, nil, {any = {8913, 8914, 8915, 8916, 8917, 8918, 8919, 8920}}, {kind = 1, name = "Mokvar", mapID = 1454}, "prereq-unclear"}
+t[8929] = {"In Search of Anthion", 60, 58, 1, nil, nil, {any = {8926, 8931, 8932, 8933, 8934, 8935, 8936, 8937}}, {kind = 1, name = "Deliana", mapID = 1455}, "prereq-unclear"}
+t[8930] = {"In Search of Anthion", 60, 58, 2, nil, nil, {any = {8927, 8938, 8939, 8940, 8941, 8942, 8943, 8944}}, {kind = 1, name = "Mokvar", mapID = 1454}, "prereq-unclear"}
+t[8945] = {"Dead Man's Plea", 60, 58, 3, nil, nil, {any = {8929, 8930}}, {kind = 1, name = "Anthion Harmon", mapID = 1423}, "prereq-unclear"}
+t[8946] = {"Proof of Life", 60, 58, 3, nil, nil, {all = {8945}}, {kind = 1, name = "Ysida Harmon"}, "no-giver-coords"}
+t[8949] = {"Falrin's Vendetta", 60, 58, 3, nil, nil, {all = {8948}}, {kind = 1, name = "Falrin Treeshaper"}, "no-giver-coords"}
+t[8950] = {"The Instigator's Enchantment", 60, 58, 3, nil, nil, {all = {8949}}, {kind = 1, name = "Falrin Treeshaper"}, "no-giver-coords"}
+t[8960] = {"Bodley's Unfortunate Fate", 60, 58, 1, nil, nil, {any = {8951, 8952, 8953, 8954, 8955, 8956, 8958, 8959}}, {kind = 1, name = "Deliana", mapID = 1455}, "prereq-unclear"}
+t[8961] = {"Three Kings of Flame", 60, 58, 3, nil, nil, {any = {8960, 9032}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8962] = {"Components of Importance", 60, 58, 3, nil, 129, {all = {8961}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8963] = {"Components of Importance", 60, 58, 3, nil, 1280, {all = {8961}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8964] = {"Components of Importance", 60, 58, 3, nil, 12, {all = {8961}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8965] = {"Components of Importance", 60, 58, 3, nil, 82, {all = {8961}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8966] = {"The Left Piece of Lord Valthalak's Amulet", 60, 58, 3, nil, 129, {any = {8962, 8963, 8964, 8965}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8967] = {"The Left Piece of Lord Valthalak's Amulet", 60, 58, 3, nil, 1280, {any = {8962, 8963, 8964, 8965}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8968] = {"The Left Piece of Lord Valthalak's Amulet", 60, 58, 3, nil, 12, {any = {8962, 8963, 8964, 8965}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8969] = {"The Left Piece of Lord Valthalak's Amulet", 60, 58, 3, nil, 82, {any = {8962, 8963, 8964, 8965}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8970] = {"I See Alcaz Island In Your Future...", 60, 58, 3, nil, nil, {any = {8966, 8967, 8968, 8969}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8986] = {"More Components of Importance", 60, 58, 3, nil, 1090, {all = {8970}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8987] = {"More Components of Importance", 60, 58, 3, nil, 144, {all = {8970}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8988] = {"More Components of Importance", 60, 58, 3, nil, 260, {all = {8970}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8989] = {"The Right Piece of Lord Valthalak's Amulet", 60, 58, 3, nil, 1090, {any = {8985, 8986, 8987, 8988}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8990] = {"The Right Piece of Lord Valthalak's Amulet", 60, 58, 3, nil, 9, {any = {8985, 8986, 8987, 8988}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8991] = {"The Right Piece of Lord Valthalak's Amulet", 60, 58, 3, nil, 144, {any = {8985, 8986, 8987, 8988}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8992] = {"The Right Piece of Lord Valthalak's Amulet", 60, 58, 3, nil, 260, {any = {8985, 8986, 8987, 8988}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8994] = {"Final Preparations", 60, 58, 3, nil, nil, {any = {8989, 8990, 8991, 8992}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8995] = {"Mea Culpa, Lord Valthalak", 60, 58, 3, nil, nil, {all = {8994}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8996] = {"Return to Bodley", 60, 58, 3, nil, nil, {all = {8995}}, {kind = 1, name = "Spirit of Lord Valthalak"}, "no-giver-coords"}
+t[8997] = {"Back to the Beginning", 60, 58, 1, nil, nil, {all = {8996}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[8998] = {"Back to the Beginning", 60, 58, 2, nil, nil, {all = {8996}}, {kind = 1, name = "Bodley"}, "no-giver-coords"}
+t[9015] = {"The Challenge", 60, 58, 3, nil, nil, {all = {8950}}, {kind = 1, name = "Falrin Treeshaper"}, "no-giver-coords"}
+t[9032] = {"Bodley's Unfortunate Fate", 60, 58, 2, nil, nil, {any = {8957, 9016, 9017, 9018, 9019, 9020, 9021, 9022}}, {kind = 1, name = "Mokvar", mapID = 1454}, "prereq-unclear"}
+t[78823] = {"Terror of the Desert Skies", 40, 26, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[79192] = {"Stepping Stones", 24, 14, 3, nil, nil, {any = {79007, 79008}}, {kind = 2, name = "Nailed Plank", mapID = 1413}, "prereq-unclear"}
+t[79360] = {"Elemental Aid", 33, 30, 2, nil, 64, {any = {1531, 1532, 96136}}, {kind = 1, name = "Rau Cliffrunner", mapID = 1441}, "prereq-unclear"}
+t[79624] = {"Anyone Can Cook", 40, 32, 3, nil, nil, nil, nil, "no-giver-coords"}
+t[79945] = {"Orders from the Grand Crusader", 40, 35, 1, nil, 2, nil, nil, "no-giver-coords"}
+t[90750] = {"More Work?", 55, nil, 1, nil, nil, {any = {92449, 95026}}, {kind = 1, name = "Sefira Everbright", mapID = 2482}, "no-data"}
+t[91741] = {"Nibbled-On Book", 2, 1, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[91754] = {"Rub Some Dirt In It", 56, nil, 3, nil, nil, nil, {kind = 1, name = "Hyacinth", mapID = 2482}, "no-data"}
+t[91770] = {"Bark Bite", 56, nil, 3, nil, nil, {all = {91754, 91755}}, {kind = 1, name = "Hyacinth", mapID = 2482}, "no-data"}
+t[92008] = {"Premiere Parts", 56, nil, 3, nil, nil, nil, {kind = 1, name = "Kaylaena Springwhisper", mapID = 2482}, "no-data"}
+t[92011] = {"Rubble Rummage", 58, nil, 3, nil, nil, {all = {92009}}, {kind = 1, name = "Kaylaena Springwhisper", mapID = 2482}, "no-data"}
+t[92317] = {"Stolen Life", 58, nil, 3, nil, nil, {all = {96939}}, {kind = 1, name = "Marrosis", mapID = 2482}, "no-data"}
+t[92335] = {"Ashes of the Legion Ascent", 59, nil, 3, nil, nil, {all = {96964}}, {kind = 1, name = "Renalard", mapID = 2482}, "no-data"}
+t[92415] = {"Remember That I Love You", 22, 15, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[92467] = {"Call of Earth", 4, 3, 2, nil, 64, {any = {1516, 1519, 92466}}, {kind = 1, name = "Windshaper Boro", mapID = 2521}, "prereq-unclear"}
+t[92500] = {"A Bit of the Sky", 58, nil, 3, nil, nil, {all = {92171}}, {kind = 1, name = "Skylord Omnuron", mapID = 2482}, "no-data"}
+t[92517] = {"The Criminal Element", 7, 4, 3, nil, nil, {any = {92514, 93461}}, {kind = 1, name = "Constable Aonda", mapID = 2521}, "prereq-unclear"}
+t[92612] = {"Aid from Moonglade", 58, nil, 1, nil, nil, {all = {96131}}, {kind = 1, name = "Ketharas", mapID = 2482}, "no-data"}
+t[92833] = {"Ve'han's Fall", 60, nil, 3, nil, nil, {all = {92169}}, {kind = 1, name = "Tiala Whitemane", mapID = 2482}, "no-data"}
+t[92846] = {"Outcast Necromancers", 40, 30, nil, nil, nil, {all = {92841}}, {kind = 1, name = "Orgrul", mapID = 2652}, "faction-conflict"}
+t[92859] = {"Shroud of the Winter Wilds", 60, nil, 3, nil, nil, nil, {kind = 1, name = "Evie Whirlbrew", mapID = 1452}, "no-data"}
+t[93016] = {"A Brief History Lesson", 43, nil, 3, nil, nil, {all = {96018}}, {kind = 1, name = "Mordent Evenshade", mapID = 2652}, "no-data"}
+t[93041] = {"Facing the Truth", 38, 35, 3, nil, nil, {all = {93035, 93037}}, {kind = 1, name = "Nerlokh", mapID = 2652}, "giver-faction-unknown"}
+t[93058] = {"Saving Our Own", 42, 35, 3, nil, nil, {all = {93045}}, {kind = 1, name = "Nerlokh", mapID = 2652}, "giver-faction-unknown"}
+t[93072] = {"Long-Term Solutions", 43, 30, 3, nil, nil, {all = {93066}}, {kind = 1, name = "Hagiak", mapID = 2652}, "giver-faction-unknown"}
+t[93129] = {"Threat of Starvation", 43, 30, 3, nil, nil, {all = {93066}}, {kind = 1, name = "Hagiak", mapID = 2652}, "giver-faction-unknown"}
+t[93165] = {"Mercy Falls on Deaf Ears", 13, 8, 3, nil, nil, {any = {94484, 94493}}, {kind = 1, name = "Vayn Moongaze", mapID = 2521}, "prereq-unclear"}
+t[93188] = {"Return to Orgrul", 43, 30, 3, nil, nil, {all = {93072, 93129}}, {kind = 1, name = "Hagiak", mapID = 2652}, "giver-faction-unknown"}
+t[93197] = {"Mending Communications", 58, nil, 3, nil, nil, nil, {kind = 1, name = "Sebelia", mapID = 2482}, "no-data"}
+t[93320] = {"Tower Defense", 11, 6, 3, nil, nil, {any = {92860, 92871}}, {kind = 1, name = "Valennia Stormfist", mapID = 2521}, "prereq-unclear"}
+t[93341] = {"Forlorn Gardens", 43, 35, 3, nil, nil, {all = {93394}}, {kind = 1, name = "Mithera", mapID = 2652}, "giver-faction-unknown"}
+end)
+
+questStubsBlock(function(t)
+t[93407] = {"A Thorn in the Paw", 60, nil, 3, nil, nil, nil, {kind = 1, name = "Tiala Whitemane", mapID = 2482}, "no-data"}
+t[93584] = {"Cult Closure", 60, nil, 3, nil, nil, nil, {kind = 1, name = "Thisalee Crow", mapID = 2482}, "no-data"}
+t[93594] = {"Word of the Woods", 43, 35, 3, nil, nil, {all = {93341}}, {kind = 1, name = "Mithera", mapID = 2652}, "giver-faction-unknown"}
+t[93773] = {"The Pact", 58, nil, 3, nil, nil, {all = {95006}}, {kind = 1, name = "Dendrite Starblaze", mapID = 1450}, "no-data"}
+t[94479] = {"One Person's Trash", 56, nil, 3, nil, nil, nil, {kind = 2, name = "Loose Cog", mapID = 2482}, "no-data"}
+t[94485] = {"Tears of the Lady", 12, 8, 3, nil, nil, {any = {94484, 94493}}, {kind = 1, name = "Elegael Thornpaw", mapID = 2521}, "prereq-unclear"}
+t[94486] = {"Feathers for Binding", 11, 8, 3, nil, nil, {any = {94484, 94493}}, {kind = 1, name = "Elegael Thornpaw", mapID = 2521}, "prereq-unclear"}
+t[94487] = {"Unwanted and Unworthy", 11, 8, 3, nil, nil, {any = {94484, 94493}}, {kind = 1, name = "Elegael Thornpaw", mapID = 2521}, "prereq-unclear"}
+t[94490] = {"Ripped Missive", 12, 9, 3, nil, nil, {all = {94485, 94486, 94487}}, {kind = 3}, "no-giver-coords"}
+t[94885] = {"Field Marshal's Log", 40, 36, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[94973] = {"Krol'dok Moulding", 41, 38, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[94980] = {"Krol'dok Moulding", 41, 38, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[95006] = {"Stolen Power", 58, nil, 3, nil, nil, {all = {96209}}, {kind = 1, name = "Orokai", mapID = 1450}, "no-data"}
+t[95213] = {"Stolen Blasting Powder", 10, 7, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[95260] = {"Terrors From the Deep", 42, nil, 3, nil, nil, nil, {kind = 2, name = "Painted Hide", mapID = 2548}, "no-data"}
+t[95263] = {"Somber News", 53, 48, 1, nil, nil, {all = {95262}}, nil, "no-giver-coords"}
+t[95294] = {"Smuggler's Bargain", 42, 38, 3, nil, nil, {all = {95293}}, {kind = 1, name = "Captain Haynes", mapID = 2548}, "giver-faction-unknown"}
+t[95296] = {"Shipping and Handling", 40, nil, 3, nil, nil, {all = {95294}}, {kind = 1, name = "Friz Frazzlespark", mapID = 2548}, "no-data"}
+t[95312] = {"Coming to Collect", 40, nil, 3, nil, nil, {all = {95383}}, {kind = 1, name = "Tazzik", mapID = 1446}, "giver-faction-unknown"}
+t[95318] = {"Taste of Ash", 57, nil, 3, nil, nil, {all = {95320}}, {kind = 1, name = "Felflick", mapID = 2482}, "no-data"}
+t[95320] = {"A Curious Question", 57, nil, 3, nil, nil, nil, {kind = 1, name = "Curious Crow", mapID = 2482}, "no-data"}
+t[95378] = {"The Hydra's Head", 58, nil, 3, nil, nil, {all = {95319}}, {kind = 1, name = "Felflick", mapID = 2482}, "no-data"}
+t[95383] = {"Shipping and Handling", 40, nil, 3, nil, nil, {all = {95296}}, {kind = 1, name = "Wharfmaster Steamfizzle", mapID = 1446}, "no-data"}
+t[95568] = {"Seeds for a New Season", 56, nil, 1, nil, nil, nil, {kind = 1, name = "Ketharas", mapID = 2482}, "no-data"}
+t[95569] = {"Hope for Hatchlings", 56, nil, 1, nil, nil, nil, {kind = 1, name = "Ketharas", mapID = 2482}, "no-data"}
+t[95664] = {"Elder Knowledge", 31, 24, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[95810] = {"Lost Relic Carry", 31, 24, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[95884] = {"The Offering Stone", 23, 20, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[96131] = {"An Oldstone But An Old Friend", 58, nil, 3, nil, nil, {all = {96321}}, {kind = 1, name = "Curious Crow", mapID = 2482}, "no-data"}
+t[96209] = {"The Ancient, Orokai", 58, nil, 3, nil, nil, {all = {92612}}, {kind = 1, name = "Dendrite Starblaze", mapID = 1450}, "no-data"}
+t[96321] = {"The Dying God", 58, nil, 3, nil, nil, nil, {kind = 1, name = "Velician", mapID = 2482}, "no-data"}
+t[96391] = {"Underground Map", 15, 9, 1, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[96930] = {"The Capricious Corvid", 58, nil, 1, nil, nil, {all = {93773}}, {kind = 1, name = "Ketharas", mapID = 2482}, "no-data"}
+t[96939] = {"The Balance of Life and Death", 58, nil, 3, nil, nil, {all = {96931}}, {kind = 1, name = "Jereman", mapID = 2482}, "no-data"}
+t[96959] = {"Blademaster's Bonfires", 59, nil, 3, nil, nil, nil, {kind = 1, name = "Yashiro", mapID = 2482}, "no-data"}
+t[96964] = {"A Clever Creature", 59, nil, 3, nil, nil, {all = {96931}}, {kind = 1, name = "Jereman", mapID = 2482}, "no-data"}
+t[97281] = {"A Simmering Storm", 11, 7, 3, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[97288] = {"Unending Torment", 21, 15, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[97986] = {"Argent Arbiter", 57, nil, 3, nil, nil, {all = {8152}}, {kind = 1, name = "Argent Medic", mapID = 1423}, "no-data"}
+t[98072] = {"Crocs of the Sky", 27, nil, 1, nil, nil, {all = {471}}, {kind = 1, name = "James Halloran", mapID = 1437}, "no-data"}
+t[98109] = {"Bleeding Edge", 57, nil, 3, nil, nil, {all = {97986}}, {kind = 1, name = "Argent Medic"}, "no-giver-coords"}
+t[98208] = {"Bloom of the Heavens", 29, nil, 1, nil, nil, nil, {kind = 1, name = "Sylessa Duskwhisper", mapID = 1437}, "no-data"}
+t[98341] = {"The Great Windborne Cat Spirit", 20, 20, 3, 12884901888, 1024, {any = {98340, 98393}}, {kind = 1, name = "Dendrite Starblaze", mapID = 1450}, "prereq-unclear"}
+t[98394] = {"The Great Cat Spirit", 20, 20, 1, 8, 1024, {any = {98340, 98393}}, {kind = 1, name = "Dendrite Starblaze", mapID = 1450}, "prereq-unclear"}
+t[98405] = {"The Great Cat Spirit", 20, 20, 2, 32, 1024, {any = {98340, 98393}}, {kind = 1, name = "Dendrite Starblaze", mapID = 1450}, "prereq-unclear"}
+t[98424] = {"Fizsprocket's Notes", 10, 5, 2, nil, nil, nil, {kind = 3}, "no-giver-coords"}
+t[99199] = {"A Donation of Runecloth", 60, 50, nil, nil, nil, {all = {99196, 99197, 99198}}, {kind = 1, name = "Oura Stormspinner", mapID = 1412}, "faction-conflict"}
+end)

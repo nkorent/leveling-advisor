@@ -97,7 +97,7 @@ end
     assert.is_nil(out:find("engine-smoke:", 1, true), out)
     local r = parse(out)
     -- the TOC lists the five Data files and Core/DB.lua plus the Engine files
-    assert.same({ data = 5, engine = 15 }, r.files)
+    assert.same({ data = 5, engine = 16 }, r.files)
     -- the report counts what the Data files hold
     local D = ns.Data
     assert.same({ quests = count(D.quests), npcs = count(D.npcs), zones = count(D.zones),

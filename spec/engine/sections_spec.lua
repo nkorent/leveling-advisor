@@ -48,7 +48,9 @@ describe("Sections", function()
     local s = with(S18, { completed = { [4762] = true, [965] = true, [966] = true }, log = { [4730] = { complete = true } } })
     local secs = build(s)
     local chains = find(secs, "chains"); assert.same({ 967 }, ids(chains))
-    assert.same({ 3, 6 }, { chains.rows[1].tags.chain.index, chains.rows[1].tags.chain.length })
+    -- picked by the outof.games chain (step 3 of 6); the row's "Chain n/m" is the UI's, from
+    -- Unlock.position (R7), so the row carries no chain numbers
+    assert.is_nil(chains.rows[1].tags.chain)
   end)
 
   it("each quest appears in at most one section", function()

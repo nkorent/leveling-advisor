@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Leveling Advisor
 ## Notes: Recommends zones, quests and dungeons for your level.
-## Version: 0.1.0
+## Version: 0.2.0
 ## IconTexture: Interface\AddOns\LevelingAdvisor\Media\Logo
 ## SavedVariables: LevelingAdvisorDB
 ## SavedVariablesPerCharacter: LevelingAdvisorCharDB
@@ -18,6 +18,7 @@ Engine\Difficulty.lua
 Engine\XP.lua
 Engine\Geo.lua
 Engine\Eligibility.lua
+Engine\Unlock.lua
 Engine\Hubs.lua
 Engine\Travel.lua
 Engine\Candidates.lua
@@ -52,6 +53,7 @@ UI\Items.lua
 UI\Menu.lua
 UI\QuestRow.lua
 UI\MiniMap.lua
+UI\UnlockPath.lua
 UI\QuestDetail.lua
 UI\MainView.lua
 UI\RouteView.lua

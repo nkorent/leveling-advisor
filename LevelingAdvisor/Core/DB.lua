@@ -54,10 +54,23 @@ local function decode(id, r)
   }
 end
 
+local function decodeStub(id, r)
+  local prereq = r[7] or {}
+  local start = r[8]
+  return {
+    id = id, name = r[1], level = r[2], requiredLevel = r[3], faction = r[4],
+    raceMask = r[5], classMask = r[6],
+    prereq = { all = copyList(prereq.all), any = copyList(prereq.any) },
+    start = start and { kind = start.kind, name = start.name, mapID = start.mapID } or nil,
+    reason = r[9],
+  }
+end
+
 function DB.new(data)
   local self = setmetatable({}, DB)
   self.data = data
   self.cache = {}
+  self.stubCache = {}
   self.zoneCache = {}
   self.ids = sortedKeys(data.quests)
   self.byZone = {}
@@ -83,8 +96,20 @@ function DB:quest(id)
   return q
 end
 
+-- An excluded quest that shipped quests need as a prerequisite (Contract A questStubs), or nil.
+function DB:stub(id)
+  local s = self.stubCache[id]
+  if s then return s end
+  local r = self.data.questStubs and self.data.questStubs[id]
+  if not r then return nil end
+  s = decodeStub(id, r)
+  self.stubCache[id] = s
+  return s
+end
+
 -- Fresh sorted copy each call.
 function DB:questIDs() return copyList(self.ids) end
+function DB:stubIDs() return sortedKeys(self.data.questStubs) end
 function DB:questsInZone(mapID) return copyList(self.byZone[mapID]) end
 
 function DB:npc(id) return self.data.npcs and self.data.npcs[id] end

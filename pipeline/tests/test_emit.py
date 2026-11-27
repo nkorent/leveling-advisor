@@ -8,7 +8,7 @@ from pathlib import Path
 import lupa.lua51 as lua51
 import pytest
 
-from pipeline.emit import (HEADER, emit_dungeons, emit_meta, emit_npcs, emit_quests, emit_zones,
+from pipeline.emit import (encode_stub, HEADER, emit_dungeons, emit_meta, emit_npcs, emit_quests, emit_zones,
                            encode_quest, lua_literal)
 from pipeline.merge import merge
 from pipeline.outofgames import parse_npc
@@ -272,6 +272,48 @@ def test_decodes_through_core_db(tmp_path):
     assert lua_values(db.questsInZone(db, 1439)) == [1, 4763]
     plain = db.quest(db, 1)
     assert lua_values(plain.points) == [] and lua_values(plain.exclusiveTo) == []
+
+
+def full_stub(**kw):
+    s = {"name": "Old Gods", "level": 60, "required_level": 58, "faction": "Horde", "race_mask": 178,
+         "class_mask": 1, "prereq": {"all": [6564], "any": [5]},
+         "giver": {"kind": "item", "id": 9, "map_id": 1440, "x": 1.0, "y": 2.0}, "start_name": "Damp Note",
+         "reason": "no-giver-coords"}
+    s.update(kw)
+    return s
+
+
+def test_stub_record_positions():
+    assert encode_stub(full_stub()) == [
+        "Old Gods", 60, 58, 2, 178, 1, {"all": [6564], "any": [5]},
+        {"kind": 3, "name": "Damp Note", "mapID": 1440}, "no-giver-coords"]
+    bare = encode_stub({"name": "X", "reason": "needs-rep", "faction": None, "giver": None, "prereq": None})
+    assert bare == ["X", None, None, None, None, None, None, None, "needs-rep"]
+    nameless = encode_stub(full_stub(start_name=None, giver={"kind": "npc", "id": 1}))
+    assert nameless[7] == {"kind": 1}
+
+
+def test_quests_file_has_stub_table(tmp_path):
+    emit_quests({1: mq(1)}, tmp_path / "Quests.lua", stubs={6564: full_stub(), 6000: full_stub(name="Z")})
+    data = load_lua(tmp_path / "Quests.lua").Data
+    assert data.quests[1][1] == "Some Quest"
+    stub = data.questStubs[6564]
+    assert (stub[1], stub[2], stub[3], stub[4], stub[5], stub[6], stub[9]) == ("Old Gods", 60, 58, 2, 178, 1, "no-giver-coords")
+    assert (stub[8].kind, stub[8].name, stub[8].mapID) == (3, "Damp Note", 1440)
+    assert lua_values(stub[7].all) == [6564]
+    assert data.questStubs[6000][1] == "Z"
+
+
+def test_stub_table_present_and_empty_without_stubs(tmp_path):
+    emit_quests({1: mq(1)}, tmp_path / "Quests.lua")
+    assert lua_values(load_lua(tmp_path / "Quests.lua").Data.questStubs) == []
+
+
+def test_stub_file_loads_under_luajit(tmp_path):
+    emit_quests({1: mq(1)}, tmp_path / "Quests.lua", stubs={i: full_stub() for i in range(1, 450)})
+    proc = subprocess.run([luajit(), "-b", str(tmp_path / "Quests.lua"), "/dev/null"],
+                          capture_output=True, text=True, env={})
+    assert proc.returncode == 0, proc.stderr
 
 
 # ---------------------------------------------------------------- lua_literal

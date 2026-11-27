@@ -73,12 +73,38 @@ describe("main page, right side", function()
     assert.same(ns.UI.Style.INK_SOFT, druid[1].color)
     local unv = QI.tags(fake.row(1100), db)
     assert.same({ "unverified" }, { unv[1].text })
-    local row = { tags = { chain = { index = 2, length = 6 }, elite = true, group = 5 } }
-    local texts = {}
-    for i, t in ipairs(QI.tags(row, nil)) do texts[i] = t.text end
-    assert.same({ "Chain 2/6", "5 players", "Elite" }, texts)
+    -- the chain chip comes from the chain position (R7): 965 -> 966 -> 967 in the data
+    local function texts(...)
+      local out = {}
+      for i, t in ipairs(QI.tags(...)) do out[i] = t.text end
+      return out
+    end
+    local row = { questID = 966, tags = { elite = true, group = 5 } }
+    local d, s = ns.Advisor.db, ns.Advisor.last.state
+    assert.same({ "Chain 2/3", "5 players", "Elite" }, texts(row, nil, d, s))
+    -- without db and state, or for a quest outside any chain, there is none
+    assert.same({ "5 players", "Elite" }, texts(row, nil))
+    assert.same({ "5 players", "Elite" }, texts({ questID = 1010, tags = row.tags }, nil, d, s))
     local soon = QI.tags({ soon = true, tags = {} }, { requiredLevel = 20 })
     assert.equal("Unlocks at 20", soon[1].text)
+  end)
+
+  it("a section row's Chain tag counts the prerequisite graph, as the Unlock Path does (R7)", function()
+    open({ state = ui.with("S18", { completed = { [4762] = true, [965] = true, [966] = true },
+      log = { [4730] = { complete = true } } }) })
+    -- 967 continues a started chain; outof.games has it as step 3 of 6, the data as 965 -> 966 -> 967
+    local p = fake.rowFrame(967).laQuest
+    assert.is_true(p.tags[1]:IsShown())
+    assert.equal("Chain 3/3", p.tags[1]:GetText())
+    -- 4763 needs 4762: on no outof.games chain, step 2 of 2 in the data
+    assert.equal("Chain 2/2", fake.rowFrame(4763).laQuest.tags[1]:GetText())
+    -- no prerequisites, nothing needs it: no Chain tag
+    for _, t in ipairs(fake.rowFrame(1010).laQuest.tags) do
+      assert.is_falsy(t:IsShown() and (t:GetText() or ""):find("Chain ", 1, true))
+    end
+    fake.click(fake.rowFrame(967))
+    assert.truthy(fake.visible(fake.text("The next step of a chain you have started (step 3 of 3).")))
+    assert.same({}, env.errors)
   end)
 
   it("markers", function()

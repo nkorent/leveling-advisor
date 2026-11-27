@@ -2,4 +2,4 @@
 local _, ns = ...
 ns.Data = ns.Data or {}
 
-ns.Data.meta = {built = "2026-11-26", gameData = "1.60.1", sources = {"outof.games (game data 1.60.1)", "QuestieDB 6c9c712 Forever (GPL-3.0)", "OpenMap 6c2299f (MIT)", "in-game census (map sizes and rects)"}, counts = {quests = 3876, npcs = 2197}}
+ns.Data.meta = {built = "2026-11-27", gameData = "1.60.1", sources = {"outof.games (game data 1.60.1)", "QuestieDB 6c9c712 Forever (GPL-3.0)", "OpenMap 6c2299f (MIT)", "in-game census (map sizes and rects)"}, counts = {quests = 3876, npcs = 2197}}

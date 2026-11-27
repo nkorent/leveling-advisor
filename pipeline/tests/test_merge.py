@@ -1328,3 +1328,51 @@ def test_quests_with_a_dropped_questie_correction_are_excluded():
     _, report = run([oq(100), oq(101), oq(102)], [qq(101)], questiedb=qdb_problems(problems=problems),
                     trusted_maps=set())
     assert report["excluded"] == {100: "correction-skipped", 101: "correction-unclear"}
+
+
+def _stub_inputs(**c_kw):
+    """A (kept) needs B (no giver coords) needs C (rep-gated); D is excluded and unreferenced."""
+    return [
+        oq(1, name="A", prereq_ids=[2]),
+        oq(2, name="B", giver=None, prereq_ids=[3], faction="Both", tags=[], requirements={}),
+        oq(3, name="C", **c_kw),
+        oq(4, name="D", giver=None),
+    ], [qq(3, required_min_rep=[92, 3000])]
+
+
+def test_stubs_cover_excluded_prerequisites_transitively():
+    oogs, questies = _stub_inputs()
+    quests, report = run(oogs, questies)
+    assert sorted(quests) == [1]
+    assert report["excluded"] == {2: "no-giver-coords", 3: "needs-rep", 4: "no-giver-coords"}
+    stubs = report["stubs"]
+    assert set(stubs) == {2, 3}
+    assert stubs[2]["name"] == "B" and stubs[2]["reason"] == "no-giver-coords"
+    assert stubs[2]["prereq"]["all"] == [3]
+    assert stubs[3]["reason"] == "needs-rep" and stubs[3]["giver"]["id"] == 1
+    assert 4 not in stubs
+
+
+def test_stubs_empty_when_nothing_excluded_is_needed():
+    _, report = run([oq(1), oq(2, giver=None)])
+    assert report["stubs"] == {}
+
+
+def test_stub_faction_none_when_fix_unclear():
+    fixes = {"Alliance": {"pre_any": None}, "Horde": {"pre_any": [401]}}
+    oogs = [oq(1, prereq_ids=[400]), oq(400, name="B", faction="Both", giver=place(ident=30))]
+    quests, report = run(oogs, [qq(400, starter_npcs=[30], faction_fixes=fixes)], npcs={30: "Both"})
+    assert report["excluded"] == {400: "faction-fix-unclear"}
+    assert report["stubs"][400]["faction"] is None
+    assert report["stubs"][400]["reason"] == "faction-fix-unclear"
+
+
+def test_stub_faction_none_when_faction_conflict():
+    """The sources disagree on the faction (here an Alliance quest from a Horde-only giver), so the
+    stub's faction is unclear: None, never one side that blocks the other (R6)."""
+    oogs = [oq(1, prereq_ids=[400]), oq(400, name="B", faction="Alliance", giver=place(ident=30))]
+    quests, report = run(oogs, npcs={30: "Horde", 1: "Alliance"})
+    assert sorted(quests) == [1]
+    assert report["excluded"] == {400: "faction-conflict"}
+    assert report["stubs"][400]["faction"] is None
+    assert report["stubs"][400]["reason"] == "faction-conflict"

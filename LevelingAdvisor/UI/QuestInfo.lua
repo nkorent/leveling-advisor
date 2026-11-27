@@ -74,13 +74,19 @@ function QuestInfo.subLine(db, row, state)
   return table.concat(parts, " · ")
 end
 
--- Tag chips for a row: { { text, color } } in display order. `q` is the DB quest.
-function QuestInfo.tags(row, q)
+-- "Chain 15/21": a chain position (QuestInfo.chainPosition).
+function QuestInfo.chainText(pos)
+  return "Chain " .. pos.index .. "/" .. pos.length
+end
+
+-- Tag chips for a row: { { text, color } } in display order. `q` is the DB quest. With `db`
+-- and `state`, the first chip is the quest's "Chain n/m" (QuestInfo.chainPosition, the count
+-- the Unlock Path uses); without them, or for a quest on no chain, there is no chain chip.
+function QuestInfo.tags(row, q, db, state)
   local out, t = {}, row.tags or {}
   local soft = Style.INK_SOFT
-  if t.chain then
-    out[#out + 1] = { text = "Chain " .. t.chain.index .. "/" .. t.chain.length, color = soft }
-  end
+  local pos = db and state and row.questID and QuestInfo.chainPosition(db, row.questID, state)
+  if pos then out[#out + 1] = { text = QuestInfo.chainText(pos), color = soft } end
   if t.class then
     local c = type(RAID_CLASS_COLORS) == "table" and RAID_CLASS_COLORS[t.class]
     out[#out + 1] = { text = QuestInfo.className(t.class),
@@ -109,7 +115,48 @@ local function firstMissingPrereq(q, state)
   return (prereq.any or {})[1]
 end
 
--- One entry per Eligibility reason code: function(db, q, state) -> text, short.
+-- ns.Unlock[name](db, questID, state), or nil. Fail-soft: Engine/Unlock.lua is new in 0.2.0
+-- and is not loaded after an update without a client restart (/reload only). An error inside
+-- it is reported, never raised, so the page or row still renders.
+local function fromUnlock(name, db, questID, state)
+  local Unlock = ns.Unlock
+  local f = type(Unlock) == "table" and Unlock[name]
+  if type(f) ~= "function" then return nil end
+  local ok, result = pcall(f, db, questID, state)
+  if ok then return result end
+  local handler = ns.Util.call(geterrorhandler)
+  if handler then pcall(handler, result) end
+  return nil
+end
+
+-- A quest's unlock path (Unlock.path), or nil.
+function QuestInfo.unlockPath(db, questID, state)
+  return fromUnlock("path", db, questID, state)
+end
+
+-- A quest's chain position { index, length } (Unlock.position), or nil: every "Chain n/m" and
+-- "step n of m" text comes from here, so it counts the quests the Unlock Path counts (R7).
+function QuestInfo.chainPosition(db, questID, state)
+  return fromUnlock("position", db, questID, state)
+end
+
+-- A quest's unlock path (Engine/Unlock.lua) with more than one quest left and a step to
+-- start: "Needs 4 earlier quests first. Start with The Stagnant Oasis." and
+-- "Needs 4 earlier quests"; a blocked path says so; nil otherwise.
+local function pathTexts(path)
+  if type(path) ~= "table" then return nil end
+  if path.blocked then
+    return "Needs earlier quests that are not available to your character.", "Needs unavailable quests"
+  end
+  if (path.remaining or 0) <= 1 or not path.first then return nil end
+  local step = path.steps[path.first]
+  local n = Style.number(path.remaining)
+  return "Needs " .. n .. " earlier quests first. Start with " .. tostring(step.name or "Unknown quest") .. ".",
+    "Needs " .. n .. " earlier quests"
+end
+
+-- One entry per Eligibility reason code: function(db, q, state, path) -> text, short.
+-- `path` is the quest's unlock path when the caller has it.
 local REASONS = {
   completed = function() return "You have completed this quest.", "Completed" end,
   ignored = function() return "You are ignoring this quest.", "Ignored" end,
@@ -123,7 +170,9 @@ local REASONS = {
   exclusive = function() return "You did a quest that rules this one out.", "Ruled out" end,
   unavailable = function() return "You did a quest that rules this one out.", "Ruled out" end,
   breadcrumb = function() return "You already have the quest it leads to.", "Not needed" end,
-  prereq = function(db, q, state)
+  prereq = function(db, q, state, path)
+    local text, short = pathTexts(path)
+    if text then return text, short end
     local p = firstMissingPrereq(q, state)
     local pq = p and method(db, "quest", p)
     local name = type(pq) == "table" and pq.name or "an earlier quest"
@@ -142,8 +191,9 @@ local REASONS = {
 }
 
 -- -> status ("available" | "soon" | "progress" | "complete" | "done" | "unavailable"),
--- long text, short text.
-function QuestInfo.availability(db, q, state)
+-- long text, short text, and for "unavailable" the Eligibility reason. `path` (optional,
+-- Unlock.path of q) words a quest locked behind earlier quests.
+function QuestInfo.availability(db, q, state, path)
   local E = ns.Eligibility
   local ok, result, reason = pcall(E.check, db, q, state)
   if not ok then return "unavailable", "Not enough data to recommend this quest.", "No data" end
@@ -159,7 +209,8 @@ function QuestInfo.availability(db, q, state)
   end
   if reason == "completed" then return "done", REASONS.completed() end
   local f = REASONS[reason] or REASONS["no-data"]
-  return "unavailable", f(db, q, state)
+  local text, short = f(db, q, state, path)
+  return "unavailable", text, short, reason
 end
 
 -- Mirrors Engine/Sections.lua rowYards (Engine is off limits, so the copy is forced).
@@ -226,8 +277,8 @@ function QuestInfo.row(db, questID, state)
     giver = { mapID = g.mapID, x = g.x, y = g.y, kind = g.kind, id = g.id },
     yards = rowYards(db, state, q, status),
     short = short,
+    -- no chain numbers: QuestInfo.tags shows the chain position when it renders the row
     tags = {
-      chain = q.chain and { index = q.chain.index, length = q.chain.length } or nil,
       class = classTag(q, state),
       elite = q.elite and true or false,
       group = (q.groupSize and q.groupSize >= 2) and q.groupSize or nil,
@@ -317,9 +368,9 @@ function QuestInfo.why(db, q, state, source)
   elseif section == "class" then
     return "A " .. (QuestInfo.className(state.classFile) or "class") .. " class quest."
   elseif section == "chains" then
-    local c = q.chain or {}
-    return "The next step of a chain you have started (step " .. tostring(c.index) .. " of "
-      .. tostring(c.length) .. ")."
+    local pos = QuestInfo.chainPosition(db, q.id, state)
+    if not pos then return "The next step of a chain you have started." end
+    return "The next step of a chain you have started (step " .. pos.index .. " of " .. pos.length .. ")."
   elseif section == "next" then
     return "One of the first quests in " .. (QuestInfo.zoneName(db, q.zone) or "that zone")
       .. ", your next recommended zone."
@@ -357,17 +408,20 @@ local function turnInPart(db, q)
   return name and (" · turn in to " .. name) or nil
 end
 
-local function giverBox(db, q, state, status, short)
+-- `startText`: the whole status of a quest locked behind its unlock path (pathTexts).
+local function giverBox(db, q, state, status, short, startText)
   local place = QuestInfo.place(db, q, state)
   if type(place) ~= "table" then return nil end
-  local word = STATE_WORDS[status]
-  if status == "soon" then word = "Unlocks at level " .. tostring(q.requiredLevel) end
-  word = word or short
-  local status_text = word
-  local d = dist(db, state, place)
-  if d then status_text = status_text .. " · " .. math.floor(d + 0.5) .. " yd" end
-  if status ~= "complete" and status ~= "done" then
-    status_text = status_text .. (turnInPart(db, q) or "")
+  local status_text = startText
+  if not status_text then
+    local word = STATE_WORDS[status]
+    if status == "soon" then word = "Unlocks at level " .. tostring(q.requiredLevel) end
+    status_text = word or short
+    local d = dist(db, state, place)
+    if d then status_text = status_text .. " · " .. math.floor(d + 0.5) .. " yd" end
+    if status ~= "complete" and status ~= "done" then
+      status_text = status_text .. (turnInPart(db, q) or "")
+    end
   end
   return {
     title = placeTitle(db, place),
@@ -382,23 +436,24 @@ function QuestInfo.detail(db, questID, state, source)
   local q = method(db, "quest", questID)
   local row = QuestInfo.row(db, questID, state)
   if type(q) ~= "table" or not row then return nil end
-  local status, text, short = QuestInfo.availability(db, q, state)
+  local unlock = QuestInfo.unlockPath(db, questID, state)
+  local status, _, short, reason = QuestInfo.availability(db, q, state, unlock)
+  local startText = reason == "prereq" and (pathTexts(unlock)) or nil
   local d = {
     questID = q.id, title = q.name, level = q.level, color = row.color, state = status,
     requiredText = q.requiredLevel and ("Requires level " .. q.requiredLevel) or nil,
-    giver = giverBox(db, q, state, status, short),
+    giver = giverBox(db, q, state, status, short, startText),
     why = QuestInfo.why(db, q, state, source),
     objective = q.objectiveText,
+    unlock = unlock,
   }
-  local chain = q.chain
-  if chain and (chain.length or 0) >= 2 then
-    d.chainText = "Chain " .. chain.index .. "/" .. chain.length
-      .. (chain.index == chain.length and " · last step" or "")
+  -- the chain position counts the quests the Unlock Path counts (R7), with or without a path
+  local pos = QuestInfo.chainPosition(db, questID, state)
+  if pos then
+    d.chainText = QuestInfo.chainText(pos) .. (pos.index == pos.length and " · last step" or "")
   end
-  -- the chain has its own text; the chips are the other tags
-  local tagRow = { soon = row.soon, tags = {} }
-  for k, v in pairs(row.tags) do if k ~= "chain" then tagRow.tags[k] = v end end
-  d.tags = QuestInfo.tags(tagRow, q)
+  -- the chain has its own text; the chips (no db and state: no chain chip) are the other tags
+  d.tags = QuestInfo.tags(row, q)
   if row.xp > 0 then d.xpText = "~" .. Style.number(row.xp) .. " XP" end
   local chainXP = QuestInfo.chainXP(db, q, state)
   if chainXP and chainXP > row.xp then

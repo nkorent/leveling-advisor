@@ -273,6 +273,7 @@ local function dungeonRow(frame, e)
     local cur = UI.current()
     UI.QuestRow.render(frame, e.row, {
       selected = cur and cur.questID == e.row.questID,
+      chain = true,
       -- I1: a quest this character cannot act on says why ("Horde only", ...)
       sub = QuestInfo.statusText(e.row),
       onClick = function(row) UI.select(row.questID) end,

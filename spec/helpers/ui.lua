@@ -296,6 +296,7 @@ function W:Raise() self.raised = (self.raised or 0) + 1 end
 -- Mouse and moving.
 function W:SetMovable(v) self.movable = v end
 function W:EnableMouse(v) self.mouse = v end
+function W:SetPropagateMouseClicks(v) self.propagateClicks = v end
 function W:RegisterForDrag(...) self.drag = { ... } end
 function W:RegisterForClicks(...) self.clicks = { ... } end
 function W:StartMoving() self.moving = true end
@@ -376,7 +377,7 @@ local FRAME = {
   "StopMovingOrSizing", "SetUserPlaced", "IsUserPlaced", "SetDontSavePosition", "GetDontSavePosition",
   "SetClampedToScreen", "IsClampedToScreen", "SetClampRectInsets", "SetResizeBounds",
   "RegisterForDrag", "EnableMouseWheel", "IsMouseWheelEnabled", "EnableKeyboard",
-  "IsKeyboardEnabled", "SetPropagateKeyboardInput", "SetHitRectInsets", "GetHitRectInsets",
+  "IsKeyboardEnabled", "SetPropagateKeyboardInput", "SetPropagateMouseClicks", "SetHitRectInsets", "GetHitRectInsets",
   "SetScale", "GetScale", "SetClipsChildren", "DoesClipChildren",
   "GetChildren", "GetNumChildren", "GetRegions", "GetNumRegions", "SetID", "GetID",
   "SetAttribute", "GetAttribute", "SetHyperlinksEnabled", "SetFlattensRenderLayers",

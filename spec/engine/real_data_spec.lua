@@ -69,6 +69,25 @@ end
     end
   end)
 
+  it("stubs cover excluded prerequisites", function()
+    local stub = db:stub(6564)
+    assert.is_truthy(stub)
+    assert.is_truthy(stub.name and stub.name ~= "")
+    local total, missing = 0, 0
+    for _, id in ipairs(db:questIDs()) do
+      local q = db:quest(id)
+      for _, list in ipairs({ q.prereq.all, q.prereq.any }) do
+        for _, pid in ipairs(list) do
+          total = total + 1
+          if not db:quest(pid) and not db:stub(pid) then missing = missing + 1 end
+        end
+      end
+    end
+    print(("prerequisite ids with neither quest nor stub: %d of %d"):format(missing, total))
+    assert.is_true(total > 0)
+    assert.is_true(missing < total * 0.05, "unresolved prerequisites: " .. missing .. " of " .. total)
+  end)
+
   it("covers both factions, every grid race and levels 1 to 58", function()
     assert.equals(72, #chars)
   end)
@@ -160,6 +179,214 @@ end
     end
     assert.is_true(pickups > 100, "pickups: " .. pickups)
     assert.is_true(dungeonPickups > 0, "dungeon pickups: " .. dungeonPickups)
+  end)
+
+  -- Unlock paths (Engine/Unlock.lua) on the shipped data.
+  local function player(faction, raceMask, classFile, classMask, level, completed)
+    return {
+      faction = faction, raceMask = raceMask, classFile = classFile, classMask = classMask,
+      level = level, mapID = 1413, x = 50, y = 50,
+      completed = completed or {}, log = {}, ignored = {}, recordedXP = {},
+      settings = { elite = true, dungeons = true },
+    }
+  end
+
+  local function stepField(p, key)
+    local out = {}
+    for i, s in ipairs(p.steps) do out[i] = s[key] end
+    return out
+  end
+
+  -- Each required step's position; fails on a required id listed twice. (An option may sit in
+  -- two any-groups whose lists differ.)
+  local function positions(p, what)
+    local pos = {}
+    for i, s in ipairs(p.steps) do
+      if not (s.group and s.group.kind == "any") then
+        assert.is_nil(pos[s.questID], what .. ": step " .. s.questID .. " listed twice")
+        pos[s.questID] = i
+      end
+    end
+    return pos
+  end
+
+  -- Every all-list prerequisite of a required step that is in the path comes before it
+  -- (any-group options are exempt: their own prerequisites are not walked).
+  local function assertOrdered(p, pos, what)
+    for i, s in ipairs(p.steps) do
+      local r = db:quest(s.questID) or db:stub(s.questID)
+      if r and not (s.group and s.group.kind == "any") then
+        for _, pid in ipairs(r.prereq.all) do
+          if pos[pid] then
+            assert.is_true(pos[pid] < i, what .. ": " .. pid .. " is not before " .. s.questID)
+          end
+        end
+      end
+    end
+  end
+
+  it("unlock path of 914 (Leaders of the Fang) for a level-17 Tauren druid", function()
+    local p = ns.Unlock.path(db, 914, player("Horde", 32, "DRUID", 1024, 17, { [886] = true, [870] = true }))
+    assert.same({ 886, 870, 877, 880, 1489, 1490 }, stepField(p, "questID"))
+    assert.same({ "done", "done", "start", "locked", "locked", "locked" }, stepField(p, "status"))
+    assert.equals(3, p.first)
+    assert.equals(4, p.remaining)
+  end)
+
+  it("unlock path of 94972 (Tome of Twilight) holds every ancestor once, after its prerequisites", function()
+    local p = ns.Unlock.path(db, 94972, player("Horde", 2, "WARRIOR", 1, 41))
+    local want, n = {}, 0
+    local function walk(id)
+      local r = db:quest(id) or db:stub(id)
+      for _, pid in ipairs(r and r.prereq.all or {}) do
+        if not want[pid] then want[pid] = true; n = n + 1; walk(pid) end
+      end
+    end
+    walk(94972)
+    local pos = positions(p, "94972")
+    for id in pairs(want) do assert.is_truthy(pos[id], "94972: ancestor " .. id .. " missing") end
+    assert.equals(n, #p.steps)
+    assertOrdered(p, pos, "94972")
+    assert.equals(20, p.total)
+  end)
+
+  -- R7: "Chain n/m" counts the quests the Unlock Path counts ("20 quests before this one").
+  it("chain positions of 94972 and 914 match their Unlock Paths", function()
+    local s = player("Horde", 2, "WARRIOR", 1, 41)
+    local pos = ns.Unlock.position(db, 94972, s)
+    assert.equals(21, pos.index)
+    assert.equals(ns.Unlock.path(db, 94972, s).total, pos.index - 1)
+    assert.is_true(pos.length >= pos.index)
+    pos = ns.Unlock.position(db, 914, player("Horde", 32, "DRUID", 1024, 17, { [886] = true, [870] = true }))
+    assert.equals(7, pos.index)
+  end)
+
+  it("every shipped quest with an unlock path is at step path.total + 1 of its chain", function()
+    local n = 0
+    for _, s in ipairs({ player("Alliance", 8, "DRUID", 1024, 30), player("Horde", 16, "ROGUE", 8, 30) }) do
+      for _, id in ipairs(db:questIDs()) do
+        local p = ns.Unlock.path(db, id, s)
+        local pos = ns.Unlock.position(db, id, s)
+        local what = s.faction .. " quest " .. id
+        if p then
+          n = n + 1
+          assert.is_truthy(pos, what)
+          assert.equals(p.total + 1, pos.index, what)
+        elseif pos then
+          assert.equals(1, pos.index, what)
+        end
+        if pos then assert.is_true(pos.length >= pos.index and pos.length >= 2, what) end
+      end
+    end
+    assert.is_true(n > 1000, "paths: " .. n)
+  end)
+
+  it("unlock path of 6565 shows the excluded quest 6564 as a named stub step", function()
+    local p = ns.Unlock.path(db, 6565, player("Horde", 2, "WARRIOR", 1, 24))
+    local step
+    for _, s in ipairs(p.steps) do
+      if s.questID == 6564 then step = s end
+    end
+    assert.is_truthy(step)
+    assert.is_truthy(step.stub)
+    assert.equals("unknown", step.status)
+    assert.is_truthy(step.name and step.name ~= "")
+  end)
+
+  -- 1530 Call of Water needs all of 1528, 1529, 2985 and 2986, which exclude each other.
+  it("unlock path of 1535 for a shaman past 1530: nothing behind it blocked or start (R2)", function()
+    local s = player("Horde", 32, "SHAMAN", 64, 22, { [1528] = true, [1530] = true })
+    assert.equals("eligible", (ns.Eligibility.check(db, quest(1535), s)))
+    local p = ns.Unlock.path(db, 1535, s)
+    assert.is_false(p.blocked)
+    assert.is_nil(p.first)
+    assert.equals(0, p.remaining)
+    for _, step in ipairs(p.steps) do
+      assert.equals("done", step.status, "step " .. step.questID)
+    end
+    local reason = {}
+    for _, step in ipairs(p.steps) do reason[step.questID] = step.reason end
+    assert.same({ [1528] = "completed", [1529] = "implied", [2985] = "implied", [2986] = "implied",
+      [1530] = "completed" }, reason)
+  end)
+
+  it("unlock path of 1530 with one Call of Water variant done: the others conflict, not blocked (R3)", function()
+    local p = ns.Unlock.path(db, 1530, player("Horde", 32, "SHAMAN", 64, 22, { [1528] = true }))
+    assert.is_false(p.blocked)
+    local byID = {}
+    for _, step in ipairs(p.steps) do byID[step.questID] = step end
+    assert.equals("done", byID[1528].status)
+    for _, id in ipairs({ 1529, 2985, 2986 }) do
+      assert.same({ "unknown", "conflict" }, { byID[id].status, byID[id].reason }, "step " .. id)
+    end
+  end)
+
+  it("unlock paths of every shipped quest start only takeable steps, each step once and in order", function()
+    local paths = 0
+    for _, s in ipairs({ player("Alliance", 8, "DRUID", 1024, 30), player("Horde", 16, "ROGUE", 8, 30) }) do
+      for _, id in ipairs(db:questIDs()) do
+        local q = quest(id)
+        if #q.prereq.all + #q.prereq.any > 0 then
+          local p = ns.Unlock.path(db, id, s)
+          local what = s.faction .. " quest " .. id
+          if p then
+            paths = paths + 1
+            if p.first then assert.equals("start", p.steps[p.first].status, what) end
+            for _, step in ipairs(p.steps) do
+              if step.status == "start" then
+                local sq = quest(step.questID)
+                assert.is_truthy(sq, what .. ": start on a step outside the data")
+                local got, why = ns.Eligibility.check(db, sq, s)
+                assert.is_true(got == "eligible" or why == "grey" or why == "ignored",
+                  what .. ": step " .. step.questID .. " is start but " .. tostring(got or why))
+              end
+            end
+            assertOrdered(p, positions(p, what), what)
+          end
+        end
+      end
+    end
+    assert.is_true(paths > 1000, "paths: " .. paths)
+  end)
+
+  it("never says where to start a chain the character cannot finish (anti-goal)", function()
+    local s = player("Horde", 2 ^ 33, "WARLOCK", 256, 30)
+    -- 92422 needs 356 and 99156; 99156 is not for Skyborne
+    local p = ns.Unlock.path(db, 92422, s)
+    assert.is_true(p.blocked)
+    assert.is_nil(p.first)
+    -- 3101 Consecrated Letter is a paladin quest
+    p = ns.Unlock.path(db, 3101, player("Alliance", 1, "WARRIOR", 1, 10))
+    assert.is_true(p.blocked)
+    assert.is_nil(p.first)
+
+    local OWN_BLOCKED = { faction = true, race = true, class = true, exclusive = true, unavailable = true,
+      breadcrumb = true, ["max-level"] = true }
+    local states = {}
+    for _, level in ipairs({ 10, 30, 55 }) do
+      states[#states + 1] = player("Alliance", 1, "WARRIOR", 1, level)
+      states[#states + 1] = player("Alliance", 2 ^ 32, "HUNTER", 4, level)
+      states[#states + 1] = player("Horde", 2, "WARRIOR", 1, level)
+      states[#states + 1] = player("Horde", 2 ^ 33, "WARLOCK", 256, level)
+    end
+    local paths, blocked, bad = 0, 0, {}
+    for _, st in ipairs(states) do
+      for _, id in ipairs(db:questIDs()) do
+        local path = ns.Unlock.path(db, id, st)
+        if path then
+          paths = paths + 1
+          if path.blocked then blocked = blocked + 1 end
+          local _, why = ns.Eligibility.check(db, quest(id), st)
+          if path.first and (path.blocked or OWN_BLOCKED[why]) and #bad < 10 then
+            bad[#bad + 1] = ("%s race %.0f level %d: quest %d (%s, blocked %s)"):format(st.faction, st.raceMask,
+              st.level, id, tostring(why), tostring(path.blocked))
+          end
+        end
+      end
+    end
+    assert.same({}, bad)
+    assert.is_true(paths > 10000, "paths: " .. paths)
+    assert.is_true(blocked > 1000, "blocked paths: " .. blocked)
   end)
 
   it("never rejects a quest two levels up as level (the soon window)", function()

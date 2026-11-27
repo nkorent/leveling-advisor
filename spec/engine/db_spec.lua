@@ -78,6 +78,28 @@ describe("DB", function()
     assert.is_nil(d:zone(1411).kind)
     assert.equals("Darkshore", d:zone(1439).name)
   end)
+  it("decodes quest stubs (Contract A questStubs)", function()
+    local data = H.data()
+    data.questStubs = {
+      [6564] = { "Damp Note", 60, 58, 2, 178, 1, { all = { 6000 }, any = { 5 } },
+        { kind = 3, name = "Damp Note", mapID = 1440 }, "no-giver-coords" },
+      [6000] = { "Bare Stub", nil, nil, nil, nil, nil, nil, nil, "needs-rep" },
+    }
+    local d = ns.DB.new(data)
+    assert.same({ id = 6564, name = "Damp Note", level = 60, requiredLevel = 58, faction = 2,
+      raceMask = 178, classMask = 1, prereq = { all = { 6000 }, any = { 5 } },
+      start = { kind = 3, name = "Damp Note", mapID = 1440 }, reason = "no-giver-coords" }, d:stub(6564))
+    local bare = d:stub(6000)
+    assert.same({ all = {}, any = {} }, bare.prereq)
+    assert.is_nil(bare.start); assert.is_nil(bare.faction); assert.is_nil(bare.level)
+    assert.equals("needs-rep", bare.reason)
+    assert.equals(d:stub(6564), d:stub(6564)) -- cached
+    assert.is_nil(d:stub(123456))
+    assert.is_nil(d:quest(6564))
+  end)
+  it("has no stubs when the data has no questStubs table", function()
+    assert.is_nil(db:stub(6564))
+  end)
   it("returns nil for unknown ids", function() assert.is_nil(db:quest(123456)) end)
   it("fixture states are independent", function()
     local S = H.states

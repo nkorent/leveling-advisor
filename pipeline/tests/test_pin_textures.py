@@ -84,9 +84,30 @@ def test_bookmark_pixels(tmp_path):
     assert px(img, 63, 32)[3] == 0 and px(img, 20, 0)[3] < 128 and px(img, 20, 63)[3] < 128
 
 
+def test_chain_link(tmp_path):
+    run(tmp_path)
+    img = load(tmp_path / "ChainLink.tga")
+    assert (img["w"], img["h"], img["bpp"], img["itype"]) == (32, 32, 32, 2)
+    assert img["desc"] & 0x20 and img["desc"] & 0x0F == 8
+    assert len(img["pix"]) == 32 * 32 * 4
+    for x, y in ((0, 0), (31, 0), (0, 31), (31, 31)):
+        assert px(img, x, y)[3] == 0
+    # an opaque white pixel on the ring of each link; the holes stay clear
+    for x in (3, 27):
+        r, g, b, a = px(img, x, 16)
+        assert a == 255 and r > 240 and g > 240 and b > 240, (x, px(img, x, 16))
+    assert px(img, 8, 16)[3] == 0 and px(img, 22, 16)[3] == 0
+    # the links are tilted: the top of the left link sits right of its bottom
+    top = [x for x in range(32) if px(img, x, 8)[3] == 255 and px(img, x, 8)[0] > 240]
+    bottom = [x for x in range(32) if px(img, x, 23)[3] == 255 and px(img, x, 23)[0] > 240]
+    assert top and bottom and min(top) > min(bottom) - 1
+    # a dark outline exists
+    assert any(a == 255 and r < 80 for r, g, b, a in (px(img, x, 16) for x in range(0, 32)))
+
+
 def test_deterministic(tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     a.mkdir(); b.mkdir()
     run(a); run(b)
-    for name in ("PinShield.tga", "PinShieldGlow.tga", "BookmarkTab.tga"):
+    for name in ("PinShield.tga", "PinShieldGlow.tga", "BookmarkTab.tga", "ChainLink.tga"):
         assert (a / name).read_bytes() == (b / name).read_bytes()

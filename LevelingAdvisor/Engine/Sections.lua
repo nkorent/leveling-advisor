@@ -60,8 +60,8 @@ local function makeRow(db, state, c)
     xp = c.xp,
     giver = { mapID = g.mapID, x = g.x, y = g.y, kind = g.kind, id = g.id },
     yards = rowYards(db, state, c),
+    -- no chain numbers: the UI shows the chain position (Unlock.position) when it renders a row
     tags = {
-      chain = q.chain and { index = q.chain.index, length = q.chain.length } or nil,
       class = q.classQuest and state.classFile or nil,
       elite = q.elite and true or false,
       group = (q.groupSize and q.groupSize >= 2) and q.groupSize or nil,

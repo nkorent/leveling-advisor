@@ -788,6 +788,42 @@ def _exclusion(o: dict, zs: list, m: dict, info: dict, live_maps, hidden_ids=fro
     return next((reason for reason in EXCLUSION_ORDER if checks[reason]()), None)
 
 
+# Exclusion reasons whose quest has no faction the sources agree on: its stub's faction is None
+# (unclear), so the addon never blocks a chain on a faction that may be wrong (R6).
+UNCLEAR_FACTION_REASONS = frozenset({"faction-conflict", "faction-fix-unclear"})
+
+
+def _stubs(quests: dict, excluded_merged: dict, excluded: dict) -> dict[int, dict]:
+    """Stubs for excluded quests that kept quests need as prerequisites, transitively.
+
+    Walk prereq.all and prereq.any of every kept quest; an id that is an excluded quest with a merged
+    record becomes a stub and its own prerequisites are walked too. Kept ids stop the walk (they are
+    in ``quests``); ids with no merged record get no stub. A stub carries the merged name, levels,
+    masks, prereq and giver place (the addon's "how it starts"), the exclusion reason, and a faction
+    that is None when the sources leave it unclear (UNCLEAR_FACTION_REASONS) or it is missing.
+    """
+    stubs: dict[int, dict] = {}
+    todo = [pid for q in quests.values() for pid in _prereq_ids(q)]
+    while todo:
+        pid = todo.pop()
+        if pid in stubs or pid in quests or pid not in excluded_merged:
+            continue
+        m, reason = excluded_merged[pid], excluded[pid]
+        stubs[pid] = {
+            "name": m.get("name"), "level": m.get("quest_level"), "required_level": m.get("required_level"),
+            "faction": None if reason in UNCLEAR_FACTION_REASONS else m.get("faction"),
+            "race_mask": m.get("race_mask"), "class_mask": m.get("class_mask"),
+            "prereq": m.get("prereq"), "giver": m.get("giver"), "start_name": None, "reason": reason,
+        }
+        todo.extend(_prereq_ids(m))
+    return dict(sorted(stubs.items()))
+
+
+def _prereq_ids(q: dict) -> list[int]:
+    pre = q.get("prereq") or {}
+    return [*(pre.get("all") or []), *(pre.get("any") or [])]
+
+
 def merge(oog: dict[int, dict], questie: dict[int, dict], live_maps: set[int] | None,
           recorder: dict[int, dict] | None = None, without: set[str] = frozenset(),
           npcs: dict[int, str | None] | None = None, questiedb=None,
@@ -808,7 +844,8 @@ def merge(oog: dict[int, dict], questie: dict[int, dict], live_maps: set[int] | 
               "live_filter": "on" | "off", "unknown_names": {"race": {...}, "class": {...}},
               "unknown_tags": {tag: n}, "unknown_requirements": {label: n}, "warnings": [...]},
     "next_quest_in_chain": {...} (reported only), plus "questiedb": {"giver_fill": {...},
-    "xp_check": xp_check(), "xp_filled": n, "xp_level_mismatch": n} when questiedb is used.
+    "xp_check": xp_check(), "xp_filled": n, "xp_level_mismatch": n} when questiedb is used, and
+    "stubs": {id: stub} (see _stubs; the build pops it before writing report.json).
     Conflicts cover every changed quest, excluded or not.
     """
     unknown_sources = set(without) - REMOVABLE_SOURCES
@@ -840,6 +877,7 @@ def merge(oog: dict[int, dict], questie: dict[int, dict], live_maps: set[int] | 
     faction_fixes_applied = 0
 
     quests, conflicts, excluded = {}, {}, {}
+    excluded_merged: dict[int, dict] = {}
     by_reason: Counter = Counter()
     unknown_names = {"race": Counter(), "class": Counter()}
     unknown_tags, unknown_requirements = Counter(), Counter()
@@ -880,6 +918,7 @@ def merge(oog: dict[int, dict], questie: dict[int, dict], live_maps: set[int] | 
         reason = _exclusion(o, views, m, info, live_maps, hidden_ids, problems)
         if reason is not None:
             excluded[qid] = reason
+            excluded_merged[qid] = m
             by_reason[reason] += 1
             continue
         kept.update(tally)
@@ -965,4 +1004,5 @@ def merge(oog: dict[int, dict], questie: dict[int, dict], live_maps: set[int] | 
             "xp_filled": totals["xp_from_questiedb"],
             "xp_level_mismatch": fill_status["xp-level-mismatch"],
         }
+    report["stubs"] = _stubs(quests, excluded_merged, excluded)
     return quests, report

@@ -8,6 +8,8 @@ local Eligibility = {}
 ns.Eligibility = Eligibility
 
 local STATE_FACTION = { Alliance = 1, Horde = 2 }
+-- Contract A faction id by Contract B state.faction (shared with Unlock).
+Eligibility.FACTION_ID = STATE_FACTION
 
 -- Plain-arithmetic bit test; stateMask is a single bit. nil mask = any.
 local function maskAllows(mask, stateMask)
@@ -15,6 +17,7 @@ local function maskAllows(mask, stateMask)
   if stateMask == nil or stateMask <= 0 then return false end
   return math.floor(mask / stateMask) % 2 == 1
 end
+Eligibility.maskAllows = maskAllows
 
 function Eligibility.logState(state, id)
   local entry = state.log and state.log[id]

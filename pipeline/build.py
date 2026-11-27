@@ -279,6 +279,16 @@ def choose_dungeon_key(level, keys: list[str], dungeons: dict) -> str:
     return min(keys, key=rank)
 
 
+def _name_stub_starts(stubs: dict, oog_npcs: dict, questie_npcs: dict, objects: dict) -> None:
+    """Set each stub's start_name from names the build already has: NPCs (outof.games, then QuestieDB)
+    and QuestieDB objects. Item starters stay nameless (no item names are loaded)."""
+    for stub in stubs.values():
+        giver = stub["giver"] or {}
+        sources = {"npc": (oog_npcs, questie_npcs), "object": (objects,)}.get(giver.get("kind"), ())
+        stub["start_name"] = next((src[giver["id"]]["name"] for src in sources
+                                   if (src.get(giver.get("id")) or {}).get("name")), None)
+
+
 def _openmap_used(zones: dict, dungeons: dict, levels_source: dict, links_report) -> bool:
     """True when OpenMap data reached the output: zone levels, generated links or generated dungeons."""
     if "openmap" in levels_source.values() or links_report:
@@ -327,6 +337,9 @@ def build(oog_quests: dict[int, dict], oog_npcs: dict[int, dict], questie: dict[
     trusted = set(check["trusted"]) if check else set()
     quests, report = merge(oog_quests, questie, live_maps, recorder=recorder, without=without, npcs=npcs,
                            questiedb=questiedb, trusted_maps=trusted)
+    stubs = report.pop("stubs")
+    _name_stub_starts(stubs, oog_npcs, questie_npcs, getattr(questiedb, "objects", None) or {})
+    report["counts"]["stubs"] = len(stubs)
     extra_npcs = questiedb_npcs(quests, oog_npcs, questiedb, trusted) if questiedb is not None else {}
     out_npcs = {**oog_npcs, **extra_npcs}
     if questiedb is not None:
@@ -419,7 +432,7 @@ def build(oog_quests: dict[int, dict], oog_npcs: dict[int, dict], questie: dict[
         "Zones": lambda p: emit_zones(out_zones, continents, p),
         "NPCs": lambda p: emit_npcs(out_npcs, p),
         "Dungeons": lambda p: emit_dungeons(out_dungeons, p),
-        "Quests": lambda p: emit_quests(quests, p),
+        "Quests": lambda p: emit_quests(quests, p, stubs),
     })
 
     report.update({

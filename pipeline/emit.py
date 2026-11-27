@@ -177,6 +177,25 @@ def encode_quest(q: dict) -> list:
     ]
 
 
+def encode_stub(s: dict) -> list:
+    """Quest stub (merge _stubs) -> Contract A questStubs positional record (fields 1-9)."""
+    prereq = s.get("prereq") or {}
+    giver = s.get("giver")
+    start = _named(kind=_enum(KIND, giver.get("kind"), "place kind"), name=s.get("start_name"),
+                   mapID=giver.get("map_id")) if giver else None
+    return [
+        s.get("name"),                                                   # 1
+        s.get("level"),                                                  # 2
+        s.get("required_level"),                                         # 3
+        _enum(FACTION, s.get("faction"), "faction"),                     # 4
+        s.get("race_mask") or None,                                      # 5
+        s.get("class_mask") or None,                                     # 6
+        _named(all=list(prereq.get("all") or []), any=list(prereq.get("any") or [])),  # 7
+        start,                                                           # 8
+        s.get("reason"),                                                 # 9
+    ]
+
+
 def encode_npc(n: dict) -> list:
     """outof.games NPC (parse_npc) -> {name, faction, level, { {mapID, x, y}, ... }}."""
     spawns = [_point(s) for s in n.get("spawns") or []]
@@ -245,8 +264,9 @@ def _table_file(path: Path, var: str, entries: list[tuple]) -> None:
     _write(path, lines)
 
 
-def _block_file(path: Path, var: str, entries: list[tuple]) -> None:
-    """ns.Data.<var> filled in blocks of BLOCK_SIZE records, each block its own function."""
+def _block_file(path: Path, var: str, entries: list[tuple], extra: tuple | None = None) -> None:
+    """ns.Data.<var> filled in blocks of BLOCK_SIZE records, each block its own function.
+    extra: (var, entries) for a second table in the same file, blocked the same way."""
     lines = [*PREAMBLE, "", "local t = {}", f"ns.Data.{var} = t",
              "-- one function per block: LuaJIT allows at most 65536 constants per function",
              "local function block(fill) fill(t) end"]
@@ -254,12 +274,22 @@ def _block_file(path: Path, var: str, entries: list[tuple]) -> None:
         lines += ["", "block(function(t)"]
         lines += [f"t[{lua_literal(k)}] = {lua_literal(v)}" for k, v in entries[start:start + BLOCK_SIZE]]
         lines.append("end)")
+    if extra:
+        name, rows = extra
+        lines += ["", f"local {name} = {{}}", f"ns.Data.{name} = {name}",
+                  f"local function {name}Block(fill) fill({name}) end"]
+        for start in range(0, len(rows), BLOCK_SIZE):
+            lines += ["", f"{name}Block(function(t)"]
+            lines += [f"t[{lua_literal(k)}] = {lua_literal(v)}" for k, v in rows[start:start + BLOCK_SIZE]]
+            lines.append("end)")
     _write(path, lines)
 
 
-def emit_quests(quests: dict[int, dict], path: Path) -> None:
-    """Data/Quests.lua: ns.Data.quests = { [questID] = { positional fields 1-25 } }."""
-    _block_file(path, "quests", [(int(qid), encode_quest(quests[qid])) for qid in sorted(quests)])
+def emit_quests(quests: dict[int, dict], path: Path, stubs: dict[int, dict] | None = None) -> None:
+    """Data/Quests.lua: ns.Data.quests = { [questID] = { positional fields 1-25 } } and
+    ns.Data.questStubs = { [questID] = { positional fields 1-9 } } (always present, maybe empty)."""
+    _block_file(path, "quests", [(int(qid), encode_quest(quests[qid])) for qid in sorted(quests)],
+                extra=("questStubs", [(int(qid), encode_stub(stubs[qid])) for qid in sorted(stubs or {})]))
 
 
 def emit_npcs(npcs: dict[int, dict], path: Path) -> None:

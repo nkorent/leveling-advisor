@@ -4,6 +4,8 @@
 Writes uncompressed 32-bit TGA files (64x64, alpha, top-left origin, y down):
   PinShield.tga      map pin: dark shield with a gold rim and a faint inner highlight
   PinShieldGlow.tga  the same shape in gold with a soft outer glow
+  ChainLink.tga      the chain badge on the dungeon quest list (32x32, shown at 17x17):
+                     two interlocked rounded links, white with a dark outline (tinted in code)
   BookmarkTab.tga    the book's side tab on the quest log (shown at 36x40): dark body,
                      bronze-gold rim on the top, right and bottom edges, rounded right
                      corners; the left edge is open (it tucks under the frame)
@@ -40,6 +42,20 @@ BOOK_RIM_COLOR = (222, 178, 52)  # bronze-gold
 BOOK_TOP = (40, 29, 18)          # near black-brown at the top ...
 BOOK_BOTTOM = (24, 17, 10)       # ... and at the bottom
 BOOK_ALPHA = 0.9
+
+# Chain link icon, in pixels of a 32x32 canvas (the mockup's i-link at 2x): two capsule
+# rings side by side, each tilted -35 degrees about its own centre, interlocked.
+LINK_SIZE = 32
+LINK_Y = 16.0
+LINK_CENTERS = (10.6, 21.4)  # x of each link's centre
+LINK_TILT = math.radians(35)  # sampling rotation that undoes the -35 degree tilt
+LINK_HALF = 2.2              # half-length of the straight part
+LINK_MID = 5.2               # radius of the ring's centre line
+LINK_RING = 3.8              # ring thickness (about 12% of the canvas)
+LINK_OUT = 1.0               # dark outline outside the ring
+LINK_IN = 0.7                # dark outline inside the ring
+LINK_WHITE = (255, 255, 255)
+LINK_DARK = (40, 28, 15)
 
 
 def bezier(p0, p1, p2, p3, n=24):
@@ -212,9 +228,44 @@ def render_bookmark():
     return [[supersample(px, py, sample) for px in range(SIZE)] for py in range(SIZE)]
 
 
+def link_dist(cx, x, y):
+    """Distance from (x, y) to link cx's centre segment (the link tilted -35 degrees)."""
+    dx, dy = x - cx, y - LINK_Y
+    lx = dx * math.cos(LINK_TILT) - dy * math.sin(LINK_TILT)
+    ly = dx * math.sin(LINK_TILT) + dy * math.cos(LINK_TILT)
+    return math.hypot(lx - max(-LINK_HALF, min(LINK_HALF, lx)), ly)
+
+
+def link_layer(c, cx, x, y):
+    d = link_dist(cx, x, y)
+    lo, hi = LINK_MID - LINK_RING / 2, LINK_MID + LINK_RING / 2
+    if lo <= d <= hi:
+        return over(c, LINK_WHITE, 1.0)
+    if lo - LINK_IN <= d <= hi + LINK_OUT:
+        return over(c, LINK_DARK, 1.0)
+    return c
+
+
+def render_chain():
+    a, b = LINK_CENTERS
+
+    def sample(x, y):
+        c = [0.0, 0.0, 0.0, 0.0]
+        c = link_layer(c, a, x, y)
+        c = link_layer(c, b, x, y)
+        if y < LINK_Y:  # the left link passes over the right one on the top half
+            top = link_layer([0.0, 0.0, 0.0, 0.0], a, x, y)
+            if top[3] > 0:
+                c = over(c, top[:3], top[3])
+        return c
+
+    return [[supersample(px, py, sample) for px in range(LINK_SIZE)] for py in range(LINK_SIZE)]
+
+
 def tga_bytes(rows):
     # type 2 (uncompressed true colour), 32 bpp, descriptor: 8 alpha bits + top-left origin
-    header = struct.pack("<BBBHHBHHHHBB", 0, 0, 2, 0, 0, 0, 0, 0, SIZE, SIZE, 32, 0x28)
+    size = len(rows)
+    header = struct.pack("<BBBHHBHHHHBB", 0, 0, 2, 0, 0, 0, 0, 0, size, size, 32, 0x28)
     body = bytearray()
     for row in rows:
         for r, g, b, a in row:
@@ -229,7 +280,9 @@ def main(argv):
     (out / "PinShield.tga").write_bytes(tga_bytes(render_shield()))
     (out / "PinShieldGlow.tga").write_bytes(tga_bytes(render_glow()))
     (out / "BookmarkTab.tga").write_bytes(tga_bytes(render_bookmark()))
-    print("wrote", out / "PinShield.tga", out / "PinShieldGlow.tga", out / "BookmarkTab.tga")
+    (out / "ChainLink.tga").write_bytes(tga_bytes(render_chain()))
+    print("wrote", out / "PinShield.tga", out / "PinShieldGlow.tga", out / "BookmarkTab.tga",
+          out / "ChainLink.tga")
 
 
 if __name__ == "__main__":
