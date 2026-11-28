@@ -42,11 +42,10 @@ local function minDist(db, state, points)
   return best
 end
 
--- Yards used for the row: turn-in for complete, nearest point (else turn-in)
--- for progress, giver otherwise.
-local function rowYards(db, state, c)
-  local q = c.quest
-  local status = baseOf(c)
+-- Yards to the place a row is about: the turn-in when complete; the nearest
+-- objective point (else the turn-in) in progress; the giver otherwise. nil
+-- without the player's position or the place. QuestInfo rows use it too.
+function Sections.yards(db, state, q, status)
   if status == "complete" then return dist(db, state, q.turnIn) end
   if status == "progress" then
     local pts = q.points
@@ -54,6 +53,10 @@ local function rowYards(db, state, c)
     return dist(db, state, q.turnIn)
   end
   return dist(db, state, q.giver)
+end
+
+local function rowYards(db, state, c)
+  return Sections.yards(db, state, c.quest, baseOf(c))
 end
 
 local function makeRow(db, state, c)

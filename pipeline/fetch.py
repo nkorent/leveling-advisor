@@ -68,14 +68,15 @@ class PoliteFetcher:
         robots: RobotsRules,
         http_get: Callable[[str, dict], tuple[int, str]],
         clock=time.monotonic,
-        sleep=time.sleep,
+        sleep: Callable[[float], None] | None = None,
         min_interval: float = 2.0,
     ):
         self.cache_dir = Path(cache_dir)
         self.robots = robots
         self.http_get = http_get
         self.clock = clock
-        self.sleep = sleep
+        # time.sleep looked up per fetcher, not once at import: a test can stand in for it
+        self.sleep = time.sleep if sleep is None else sleep
         self.min_interval = min_interval
         self.requests_made = 0
         self._last_start: float | None = None

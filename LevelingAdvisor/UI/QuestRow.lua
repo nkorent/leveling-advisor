@@ -220,7 +220,7 @@ local function layoutIcons(p, q)
     local id = ids[i]
     if id then
       b:ClearAllPoints()
-      -- offsets of a scaled button are in its own units (I6)
+      -- offsets of a scaled button are in its own units
       b:SetPoint("RIGHT", p.root, "RIGHT", -(PIN + 8 + (#ids - i) * MINI_STEP) / (b.laScale or 1), 0)
       UI.Items.setItem(b, { itemID = id })
       b:Show()
@@ -251,7 +251,7 @@ function QuestRow.render(frame, row, opts)
     and QuestInfo.unlockPath(A.db, row.questID, A.last.state) or nil
   local tags
   if path then
-    tags = QuestInfo.tags(row, q) -- the badge replaces the "Chain n/m" tag (R4)
+    tags = QuestInfo.tags(row, q) -- the badge replaces the "Chain n/m" tag
   else
     tags = QuestInfo.tags(row, q, A and A.db, A and A.last and A.last.state)
   end

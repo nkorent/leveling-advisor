@@ -247,7 +247,11 @@ def test_hidden_ids_include_blacklisted_ids_questiedb_lacks(qdb):
 
 
 def test_stats_are_json_serialisable(qdb):
-    json.dumps(qdb.stats)
+    stats = qdb.stats
+    back = json.loads(json.dumps(stats))
+    assert set(back) == set(stats)
+    assert back["final"] == stats["final"] and back["layers"] == stats["layers"]
+    assert back["created"] == [list(row) for row in stats["created"]]   # tuples come back as lists
 
 
 # ---------------------------------------------------------------- inputs and sandbox

@@ -1,6 +1,6 @@
 -- The guide (0.3.0): a waypoint to the next step of the top zone's route, set
 -- quietly on each advisor result when the target changes. It pauses when the
--- player removes or replaces its waypoint, and "Continue with waypoint" resumes it.
+-- player removes or replaces its waypoint, and "Resume guide" continues it.
 local ui = require("spec.helpers.ui")
 
 -- The fixture's Darkshore (1439) plan for S18: step 1 picks up The Blackwood
@@ -232,9 +232,57 @@ describe("Guide", function()
       assert.is_true(Guide.paused())
     end)
 
+    it("arrival means within 40 yards: a removal 38 yards away is an arrival, 42 yards a pause", function()
+      -- the waypoint is 4763's giver at 37.4, 40.1; the player stands due east of it
+      local function removedFrom(yards)
+        load()
+        local perPercent = ns.Geo.distance(ns.Advisor.db, { 1439, 37.4, 40.1 }, { 1439, 38.4, 40.1 })
+        env.C_Map.GetPlayerMapPosition = function() return vector((37.4 + yards / perPercent) / 100, 0.401) end
+        fake.setUserWaypoint(nil)
+        ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+        return Guide.paused()
+      end
+      assert.is_false(removedFrom(38))
+      assert.is_true(removedFrom(42))
+    end)
+
+    -- The game cleared it on arrival and the guide forgot the spot; after a
+    -- /reload the same step must not put it back under the player's feet.
+    local function reachAndReload()
+      load()
+      env.C_Map.GetPlayerMapPosition = function(mapID)
+        if mapID == 1439 then return vector(0.375, 0.402) end
+      end
+      fake.setUserWaypoint(nil)
+      ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+      assert.is_false(Guide.paused())
+      load({ chardb = env.LevelingAdvisorCharDB })
+    end
+
+    it("after a reload, a waypoint reached before is not placed again for the same step", function()
+      reachAndReload()
+      assert.equal(0, #fake.waypoints)
+      ns.Advisor.compute()
+      assert.equal(0, #fake.waypoints)
+      assert.is_false(Guide.paused())
+      -- the step changes: the guide moves on, and forgets the reached one
+      fake.setState(took4763())
+      assert.equal(1, #fake.waypoints)
+      at(fake.waypoints[1], 1439, 0.40, 0.40)
+      assert.is_nil(env.LevelingAdvisorCharDB.guideState.reached)
+      assert.same({}, env.errors)
+    end)
+
+    it("after a reload, Resume still places the reached step: the player asked", function()
+      reachAndReload()
+      assert.equal("set", Guide.continue())
+      assert.equal(1, #fake.waypoints)
+      at(fake.waypoints[1], 1439, 0.374, 0.401)
+    end)
+
     it("says once in chat that it paused, and how to resume", function()
       load()
-      local line = "|cffffd100Leveling Advisor:|r guide paused — use Continue with waypoint to resume."
+      local line = "|cffffd100Leveling Advisor:|r guide paused — click Resume guide to continue."
       local function count()
         local n = 0
         for _, l in ipairs(out) do if l == line then n = n + 1 end end
@@ -317,6 +365,34 @@ describe("Guide", function()
       load({ state = "H20" })
       assert.equal("none", Guide.continue())
     end)
+
+    -- The book computes only while it is open, so the last result may be older
+    -- than the quest log: Resume asks for a fresh one, which moves the waypoint on.
+    it("asks for a fresh result, so a step done since the last one moves on", function()
+      load()
+      fake.setUserWaypoint(nil)
+      ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+      fake.flush()
+      ns.Adapter.snapshot = function() return took4763() end -- picked up with the book closed
+      local n = ns.Advisor.computes
+      assert.equal("set", Guide.continue())
+      fake.flush()
+      assert.equal(n + 1, ns.Advisor.computes)
+      at(fake.waypoints[#fake.waypoints], 1439, 0.40, 0.40)
+      assert.is_false(Guide.paused())
+    end)
+
+    it("turning it on asks for a fresh result too", function()
+      load()
+      Guide.setEnabled(false)
+      fake.flush()
+      ns.Adapter.snapshot = function() return took4763() end
+      local n = ns.Advisor.computes
+      Guide.setEnabled(true)
+      fake.flush()
+      assert.equal(n + 1, ns.Advisor.computes)
+      at(fake.waypoints[#fake.waypoints], 1439, 0.40, 0.40)
+    end)
   end)
 
   describe("combat", function()
@@ -378,6 +454,25 @@ describe("Guide", function()
       assert.equal(1, #fake.waypoints)
     end)
 
+    it("label says Guide: On, Guide: Paused or Guide: Off", function()
+      load()
+      assert.equal("Guide: On", Guide.label())
+      fake.setUserWaypoint(nil)
+      ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+      assert.equal("Guide: Paused", Guide.label())
+      Guide.setEnabled(false)
+      assert.equal("Guide: Off", Guide.label())
+    end)
+
+    it("off clears the failed note from the debug line", function()
+      load({ state = false })
+      env.C_Map.SetUserWaypoint = function(p) fake.waypoints[#fake.waypoints + 1] = p end
+      fake.setState("S18")
+      assert.matches("the last waypoint did not take", Guide.debugLine(), 1, true)
+      Guide.setEnabled(false)
+      assert.is_nil(Guide.debugLine():find("did not take", 1, true))
+    end)
+
     it("onChange listeners hear on/off, pause/resume and a new waypoint (protected)", function()
       load()
       local seen = {}
@@ -391,6 +486,15 @@ describe("Guide", function()
       assert.same({ "target", "paused", "paused", "target", "enabled" }, seen)
       assert.equal(5, #env.errors)
       assert.matches("boom", env.errors[1])
+    end)
+
+    it("off and on without a pause tell listeners enabled and target, never paused", function()
+      load()
+      local seen = {}
+      Guide.onChange(function(reason) seen[#seen + 1] = reason end)
+      Guide.setEnabled(false)
+      Guide.setEnabled(true)
+      assert.same({ "enabled", "target", "enabled" }, seen)
     end)
   end)
 
@@ -438,6 +542,17 @@ describe("Guide", function()
       assert.equal(0.6, fake.userWaypoint.position.x)
       assert.is_false(ns.MapPins.isOurWaypoint())
       assert.is_true(sharingPin():IsShown())
+      assert.same({}, env.errors)
+    end)
+
+    it("off keeps a waypoint the player placed even when the game did not report it", function()
+      load()
+      fake.setUserWaypoint(1439, 0.5, 0.5) -- no USER_WAYPOINT_UPDATED: the guide still thinks it is its own
+      Guide.setEnabled(false)
+      assert.is_nil(fake.cleared)
+      assert.equal(1439, fake.userWaypoint.uiMapID)
+      assert.equal(0.5, fake.userWaypoint.position.x)
+      assert.equal(0.5, fake.userWaypoint.position.y)
       assert.same({}, env.errors)
     end)
 
@@ -546,6 +661,78 @@ describe("Guide", function()
         fake.flush()
       end
       assert.equal(n + 2, ns.Advisor.computes)
+    end)
+
+    it("a burst of quest log updates in one debounce window uses up one ask, not both", function()
+      load()
+      fake.flush()
+      local n = ns.Advisor.computes
+      questLog({ [4763] = 5 }, {}) -- the result never agrees
+      for _ = 1, 3 do ns.Events.dispatch("QUEST_LOG_UPDATE") end
+      fake.flush()
+      assert.equal(n + 1, ns.Advisor.computes)
+      for _ = 1, 3 do ns.Events.dispatch("QUEST_LOG_UPDATE") end
+      fake.flush()
+      assert.equal(n + 2, ns.Advisor.computes)
+      ns.Events.dispatch("QUEST_LOG_UPDATE") -- the cap still holds
+      fake.flush()
+      assert.equal(n + 2, ns.Advisor.computes)
+    end)
+
+    it("asks made in combat join the one compute after the fight: they use up one ask", function()
+      load()
+      fake.flush()
+      local n = ns.Advisor.computes
+      questLog({ [4763] = 5 }, {}) -- the result never agrees
+      fake.combat(true)
+      for _ = 1, 3 do ns.Events.dispatch("QUEST_LOG_UPDATE"); fake.flush() end
+      assert.equal(n, ns.Advisor.computes) -- nothing computes in combat
+      fake.combat(false)
+      ns.Events.dispatch("PLAYER_REGEN_ENABLED")
+      fake.flush()
+      assert.equal(n + 1, ns.Advisor.computes)
+      ns.Events.dispatch("QUEST_LOG_UPDATE"); fake.flush() -- the second ask is still there
+      assert.equal(n + 2, ns.Advisor.computes)
+      ns.Events.dispatch("QUEST_LOG_UPDATE"); fake.flush() -- and then the cap holds
+      assert.equal(n + 2, ns.Advisor.computes)
+    end)
+
+    it("a new target gets its own two asks after the old one used up its asks", function()
+      load()
+      fake.flush()
+      local n = ns.Advisor.computes
+      questLog({ [4763] = 5 }, {}) -- the result never agrees
+      for _ = 1, 3 do ns.Events.dispatch("QUEST_LOG_UPDATE"); fake.flush() end
+      assert.equal(n + 2, ns.Advisor.computes)
+      fake.setState(took4763()) -- the target is now 7003's pickup
+      assert.equal(7003, Guide.target().questID)
+      n = ns.Advisor.computes
+      questLog({ [4763] = 5, [7003] = 6 }, {})
+      ns.Events.dispatch("QUEST_LOG_UPDATE"); fake.flush()
+      assert.equal(n + 1, ns.Advisor.computes)
+    end)
+
+    it("asks nothing while the target's objectives are not complete", function()
+      load()
+      fake.setState(did7003())
+      assert.equal("objective", Guide.target().kind)
+      fake.flush()
+      local n = ns.Advisor.computes
+      questLog({ [4763] = 5 }, { [4763] = false }) -- in the log, objectives not done
+      ns.Events.dispatch("QUEST_LOG_UPDATE"); fake.flush()
+      assert.equal(n, ns.Advisor.computes)
+    end)
+
+    it("asks for one at login while on, none while off", function()
+      local function askedAtLogin(chardb)
+        load({ state = false, chardb = chardb })
+        local n = ns.Advisor.computes or 0
+        ns.Adapter.snapshot = function() return ui.with("S18", {}) end
+        fake.flush()
+        return (ns.Advisor.computes or 0) - n
+      end
+      assert.equal(1, askedAtLogin(nil))
+      assert.equal(0, askedAtLogin({ settings = { guide = false } }))
     end)
 
     it("asks for one on a level up", function()
@@ -693,6 +880,18 @@ describe("/advisor guide", function()
     assert.equal("|cffffd100Leveling Advisor:|r The guide is off. Type /advisor guide on to turn it on.", out[#out])
   end)
 
+  it("resume is the same as continue", function()
+    local ns, _, fake, out = load()
+    fake.setUserWaypoint(nil)
+    ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+    ns.Slash.handle("guide resume")
+    assert.equal("|cffffd100Leveling Advisor:|r Guide: waypoint set to The Blackwood Corrupted.", out[#out])
+    fake.setUserWaypoint(nil)
+    ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+    ns.Slash.handle("guide continue")
+    assert.equal("|cffffd100Leveling Advisor:|r Guide: waypoint set to The Blackwood Corrupted.", out[#out])
+  end)
+
   it("continue without a next step", function()
     local ns, _, _, out = load({ state = "H20" })
     ns.Slash.handle("guide continue")
@@ -708,18 +907,18 @@ describe("/advisor guide", function()
     ns.Events.dispatch("USER_WAYPOINT_UPDATED")
     ns.Slash.handle("guide")
     assert.equal("|cffffd100Leveling Advisor:|r Guide: paused — another waypoint was set."
-      .. " Type /advisor guide continue to resume.", out[#out])
+      .. " Type /advisor guide resume to continue.", out[#out])
     ns.Slash.handle("guide continue")
     fake.setUserWaypoint(nil)
     ns.Events.dispatch("USER_WAYPOINT_UPDATED")
     ns.Slash.handle("guide")
     assert.equal("|cffffd100Leveling Advisor:|r Guide: paused — you removed its waypoint."
-      .. " Type /advisor guide continue to resume.", out[#out])
+      .. " Type /advisor guide resume to continue.", out[#out])
     ns.Slash.handle("guide off")
     ns.Slash.handle("guide")
     assert.equal("|cffffd100Leveling Advisor:|r Guide: off. Type /advisor guide on to turn it on.", out[#out])
     ns.Slash.handle("guide sideways")
-    assert.equal("|cffffd100Leveling Advisor:|r Usage: /advisor guide on|off|continue", out[#out])
+    assert.equal("|cffffd100Leveling Advisor:|r Usage: /advisor guide on|off|resume", out[#out])
   end)
 
   it("without UI/Guide.lua (an update applied with /reload only) it says so and nothing errors", function()
@@ -732,7 +931,7 @@ describe("/advisor guide", function()
     local ok, ns, env, _, out = pcall(load)
     ui.FILES = all
     assert.is_true(ok, tostring(ns))
-    ns.Slash.handle("guide continue")
+    ns.Slash.handle("guide resume")
     assert.equal("|cffffd100Leveling Advisor:|r The guide is not available.", out[#out])
     ns.Slash.handle("debug")
     assert.same({}, env.errors)
@@ -741,9 +940,215 @@ describe("/advisor guide", function()
   it("help lists it and debug shows its state and target", function()
     local ns, env, _, out = load()
     ns.Slash.handle("help")
-    assert.is_true(said(out, "/advisor guide [on|off|continue] — a waypoint to your next step"))
+    assert.is_true(said(out, "/advisor guide [on|off|resume] — a waypoint to your next step"))
     ns.Slash.handle("debug")
     assert.is_true(said(out, "guide: on, not paused, target 4763 pickup 1439 37.4,40.1, waypoint guide"))
+    assert.same({}, env.errors)
+  end)
+end)
+
+describe("Guide and a super-tracked quest", function()
+  local ns, env, fake, out, Guide
+  local LINE = "|cffffd100Leveling Advisor:|r guide paused — click Resume guide to continue."
+
+  local function count()
+    local n = 0
+    for _, l in ipairs(out) do if l == LINE then n = n + 1 end end
+    return n
+  end
+
+  -- the client fires SUPER_TRACKING_CHANGED from inside its own calls
+  local function wire()
+    local st = env.C_SuperTrack
+    local setWp, setQuest = st.SetSuperTrackedUserWaypoint, st.SetSuperTrackedQuestID
+    st.SetSuperTrackedUserWaypoint = function(v)
+      setWp(v)
+      if v then fake.superTrackedQuest = 0 end
+      ns.Events.dispatch("SUPER_TRACKING_CHANGED")
+    end
+    st.SetSuperTrackedQuestID = function(id)
+      setQuest(id)
+      ns.Events.dispatch("SUPER_TRACKING_CHANGED")
+    end
+  end
+
+  local now = 100
+  local function load(opts)
+    opts = opts or {}
+    opts.state = "S18"
+    opts.globals = opts.globals or { GetTime = function() return now end }
+    ns, env, fake, out = ui.load(opts)
+    Guide = ns.UI.Guide
+    wire()
+  end
+
+  it("pauses when the player tracks a quest, and says so once", function()
+    load()
+    assert.is_false(Guide.paused())
+    env.C_SuperTrack.SetSuperTrackedQuestID(4763)
+    assert.is_true(Guide.paused())
+    assert.equal(1, count())
+    ns.Events.dispatch("SUPER_TRACKING_CHANGED")
+    assert.equal(1, count())
+    assert.same({}, env.errors)
+  end)
+
+  it("says why in /advisor debug", function()
+    load()
+    env.C_SuperTrack.SetSuperTrackedQuestID(4763)
+    assert.is_truthy(Guide.debugLine():find("you are tracking a quest", 1, true))
+  end)
+
+  it("says why in /advisor guide", function()
+    load()
+    env.C_SuperTrack.SetSuperTrackedQuestID(4763)
+    ns.Slash.handle("guide")
+    assert.equal("|cffffd100Leveling Advisor:|r Guide: paused — you are tracking a quest."
+      .. " Type /advisor guide resume to continue.", out[#out])
+  end)
+
+  it("its own waypoint does not pause it", function()
+    load()
+    fake.setState(took4763())
+    assert.is_false(Guide.paused())
+    assert.is_true(fake.superTracked)
+    assert.equal(0, count())
+  end)
+
+  it("the quest id 0 (the waypoint is tracked) does not pause it", function()
+    load()
+    fake.superTrackedQuest = 0
+    ns.Events.dispatch("SUPER_TRACKING_CHANGED")
+    assert.is_false(Guide.paused())
+  end)
+
+  it("Resume sets and super-tracks the waypoint again", function()
+    load()
+    env.C_SuperTrack.SetSuperTrackedQuestID(4763)
+    fake.superTracked = false
+    assert.equal("set", Guide.continue())
+    assert.is_false(Guide.paused())
+    assert.is_true(fake.superTracked)
+    at(fake.waypoints[#fake.waypoints], 1439, 0.374, 0.401)
+  end)
+
+  it("a tracked quest does not pause a guide that is off", function()
+    load()
+    Guide.setEnabled(false)
+    env.C_SuperTrack.SetSuperTrackedQuestID(4763)
+    assert.is_false(Guide.paused())
+    assert.equal(0, count())
+  end)
+
+  it("without C_SuperTrack nothing errors", function()
+    load()
+    env.C_SuperTrack = nil
+    ns.Events.dispatch("SUPER_TRACKING_CHANGED")
+    assert.is_false(Guide.paused())
+    env.C_SuperTrack = { SetSuperTrackedUserWaypoint = function() end }
+    ns.Events.dispatch("SUPER_TRACKING_CHANGED")
+    assert.is_false(Guide.paused())
+    assert.same({}, env.errors)
+  end)
+
+  -- The game super-tracks a quest by itself right after the player
+  -- accepts, turns in or abandons one, and after a loading screen. Those are not
+  -- the player's choice; their own tracking outside the windows still pauses.
+  for event, window in pairs({ QUEST_ACCEPTED = 2, QUEST_TURNED_IN = 2, QUEST_REMOVED = 2,
+      PLAYER_ENTERING_WORLD = 5 }) do
+    it("ignores the auto-tracking within " .. window .. " s after " .. event .. ", not later", function()
+      now = 100
+      load()
+      ns.Events.dispatch(event, 4763)
+      now = 100 + window - 0.1
+      env.C_SuperTrack.SetSuperTrackedQuestID(4763)
+      assert.is_false(Guide.paused())
+      assert.equal(0, count())
+      now = 100 + window + 0.1
+      env.C_SuperTrack.SetSuperTrackedQuestID(1081)
+      assert.is_true(Guide.paused())
+      assert.equal(1, count())
+      assert.same({}, env.errors)
+    end)
+  end
+
+  it("a quest event does not shorten a loading screen's window", function()
+    now = 100
+    load()
+    ns.Events.dispatch("PLAYER_ENTERING_WORLD")
+    now = 101
+    ns.Events.dispatch("QUEST_ACCEPTED", 4763)
+    now = 104
+    env.C_SuperTrack.SetSuperTrackedQuestID(4763)
+    assert.is_false(Guide.paused())
+  end)
+
+  it("without GetTime there is no window: tracking pauses it, and nothing errors", function()
+    load({ globals = {} })
+    ns.Events.dispatch("QUEST_ACCEPTED", 4763)
+    env.C_SuperTrack.SetSuperTrackedQuestID(4763)
+    assert.is_true(Guide.paused())
+    assert.same({}, env.errors)
+  end)
+end)
+
+-- On the client, C_Map.SetUserWaypoint and ClearUserWaypoint fire
+-- USER_WAYPOINT_UPDATED, and C_SuperTrack.SetSuperTrackedUserWaypoint fires
+-- SUPER_TRACKING_CHANGED, from inside the call: the guide's own calls must never
+-- read as the player's.
+describe("Guide and the client's synchronous waypoint events", function()
+  local ns, env, fake, out, Guide
+
+  local function load()
+    ns, env, fake, out = ui.load({ state = false })
+    Guide = ns.UI.Guide
+    local map, st = env.C_Map, env.C_SuperTrack
+    local setWp, clearWp, track = map.SetUserWaypoint, map.ClearUserWaypoint, st.SetSuperTrackedUserWaypoint
+    map.SetUserWaypoint = function(p)
+      setWp(p)
+      ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+    end
+    map.ClearUserWaypoint = function()
+      clearWp()
+      ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+    end
+    st.SetSuperTrackedUserWaypoint = function(v)
+      track(v)
+      if v then fake.superTrackedQuest = 0 end
+      ns.Events.dispatch("SUPER_TRACKING_CHANGED")
+    end
+  end
+
+  it("its own sets, moves and Resume never pause it", function()
+    load()
+    fake.setState("S18")
+    fake.setState(took4763())
+    fake.setState(did7003())
+    assert.equal(3, #fake.waypoints)
+    at(fake.waypoints[3], 1439, 0.525, 0.334)
+    assert.is_false(Guide.paused())
+    assert.is_false(said(out, "guide paused"))
+    -- the player's own waypoint pauses it; Resume puts the guide's back without a new pause
+    fake.setUserWaypoint(1439, 0.5, 0.5)
+    ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+    assert.is_true(Guide.paused())
+    assert.equal("set", Guide.continue())
+    assert.is_false(Guide.paused())
+    assert.is_true(ns.MapPins.isOurWaypoint())
+    fake.setState(took4763())
+    assert.is_false(Guide.paused())
+    assert.same({}, env.errors)
+  end)
+
+  it("off clears its waypoint without a pause", function()
+    load()
+    fake.setState("S18")
+    Guide.setEnabled(false)
+    assert.equal(1, fake.cleared)
+    assert.is_false(Guide.paused())
+    Guide.setEnabled(true)
+    assert.is_false(Guide.paused())
+    assert.is_true(ns.MapPins.isOurWaypoint())
     assert.same({}, env.errors)
   end)
 end)

@@ -2,7 +2,9 @@
 # Release build: checks, then dist/LevelingAdvisor-<version>.zip.
 # Usage: tools/build.sh [--allow-missing-data]
 # Env: LA_BUILD_SKIP_TESTS=1 skips busted (used by the build spec);
-#      LA_ADDON_DIR overrides the addon directory (used by the build spec).
+#      LA_ADDON_DIR overrides the addon directory (used by the build spec);
+#      LA_DIST_DIR overrides the output directory (default dist/; the build spec
+#      builds into a temp dir so it never touches a real release zip).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,6 +19,29 @@ esac
 cd "$ROOT"
 
 command -v zip >/dev/null 2>&1 || { echo "error: zip not found" >&2; exit 1; }
+
+# The output dir, made and resolved first (before any work, and long before
+# anything in it is deleted). The stage dir (DIST/LevelingAdvisor) is emptied
+# below, so a DIST that would make it the repo or the addon source, or a DIST
+# inside the addon source, is refused. A missing addon dir fails the syntax check.
+DIST="${LA_DIST_DIR:-$ROOT/dist}"
+mkdir -p "$DIST"
+DIST="$(cd "$DIST" && pwd)"
+STAGE="$DIST/LevelingAdvisor"
+DIST_REAL="$(cd "$DIST" && pwd -P)"
+ROOT_REAL="$(cd "$ROOT" && pwd -P)"
+ADDON_REAL="$(cd "$ADDON" 2>/dev/null && pwd -P)" || ADDON_REAL="$ROOT_REAL/LevelingAdvisor"
+for keep in "$ROOT_REAL" "$ROOT_REAL/LevelingAdvisor" "$ADDON_REAL"; do
+  case "$keep/" in
+    "$DIST_REAL/LevelingAdvisor/"*)
+      echo "build: refusing LA_DIST_DIR=$DIST: the build would delete $keep" >&2; exit 2 ;;
+  esac
+done
+for src in "$ROOT_REAL/LevelingAdvisor" "$ADDON_REAL"; do
+  case "$DIST_REAL/" in
+    "$src/"*) echo "build: refusing LA_DIST_DIR=$DIST: it is inside the addon source $src" >&2; exit 2 ;;
+  esac
+done
 
 echo "== syntax check"
 "$ROOT/tools/check-lua-syntax.sh" "$ADDON" || { echo "build: syntax check failed" >&2; exit 1; }
@@ -47,8 +72,6 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-DIST="$ROOT/dist"
-STAGE="$DIST/LevelingAdvisor"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
 cp "$ADDON/LevelingAdvisor.toc" "$ADDON/Bindings.xml" "$STAGE/"
@@ -69,4 +92,4 @@ fi
 ZIP="$DIST/LevelingAdvisor-$VERSION$SUFFIX.zip"
 rm -f "$ZIP"
 (cd "$DIST" && zip -rq "$ZIP" LevelingAdvisor)
-echo "dist/LevelingAdvisor-$VERSION$SUFFIX.zip"
+echo "${ZIP#"$ROOT"/}"

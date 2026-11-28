@@ -9,9 +9,7 @@ local windowShown = false
 local mapShown = false
 local inited = false
 
-local function inCombat()
-  return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
-end
+local inCombat = ns.Util.inCombat
 
 local function now()
   if type(debugprofilestop) == "function" then return debugprofilestop() end
@@ -24,7 +22,7 @@ end
 
 function Advisor.isShown() return windowShown end
 
--- Plan 4b's window calls this when it opens or closes.
+-- UI/Window.lua calls this when the book opens or closes.
 function Advisor.setWindowShown(shown)
   windowShown = shown and true or false
   if windowShown and Advisor.scheduler then Advisor.scheduler:onShow() end

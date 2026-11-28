@@ -154,8 +154,9 @@ describe("Advisor", function()
     end)
 
     it("computes once and stores last", function()
-      assert.is_table(ns.Advisor.last.rec)
-      assert.is_table(ns.Advisor.last.state)
+      assert.equals(1, ns.Advisor.computes)
+      assert.same({ 18, 1439 }, { ns.Advisor.last.state.level, ns.Advisor.last.state.mapID })
+      assert.equals(1439, ns.Advisor.last.rec.zones[1].mapID) -- Darkshore, as printed
     end)
   end)
 
@@ -356,8 +357,11 @@ describe("Advisor", function()
       run(env, "debug")
       assert.is_truthy(out[n + 1]:match("level=18, mapID=1439, log=2"))
       assert.is_truthy(out[n + 1]:match("log=2, grey=%S+$"))
+      n = #out
       run(env, "help")
-      assert.is_truthy(#out > n + 2)
+      local found = false
+      for i = n + 1, #out do if out[i] == "  /advisor debug — diagnostics" then found = true end end
+      assert.is_true(found)
     end)
 
     it("pins prints the pin count on the current map and help lists it", function()

@@ -1,10 +1,12 @@
 """CLI:
   python -m pipeline crawl [--max N] [--refresh-lists] [--reparse] [--out DIR] [--cache DIR]
   python -m pipeline crawl --dungeons [--refresh-lists] [--out DIR] [--cache DIR]   # dungeon list + pages only
-  python -m pipeline dungeon-quests [--oog DIR] [--curated DIR]     # match pages -> dungeons.quests.generated.toml
+  python -m pipeline dungeon-quests [--oog DIR] [--curated DIR] [--report FILE]   # pages -> dungeons.quests.generated.toml
   python -m pipeline census [--input FILE] [--out FILE]
   python -m pipeline import-recorder <file-or-> [--out DIR]
-  python -m pipeline build [--provisional] [--without SOURCE ...] [--recorder DIR] [paths ...]
+  python -m pipeline build [--provisional] [--without SOURCE ...] [--recorder DIR] [--oog DIR] [--questiedb DIR]
+                           [--questie-blacklist FILE] [--curated DIR] [--census FILE] [--levels FILE]
+                           [--out DIR] [--report FILE]
   python -m pipeline poi [--openmap PATH] [--census FILE] [--curated DIR] [--problems FILE]
 """
 from __future__ import annotations
@@ -79,14 +81,14 @@ def _crawl_exit(result: dict, args) -> int:
 
 
 def cmd_dungeon_quests(args) -> int:
-    from pipeline.curated import _read
+    from pipeline.curated import read_toml
     from pipeline.dungeon_quests import build_quest_lists, write_quests_toml
     oog, curated = Path(args.oog), Path(args.curated)
     pages = [json.loads(p.read_text(encoding="utf-8")) for p in sorted((oog / "dungeons").glob("*.json"))]
     if not pages:
         print(f"dungeon-quests: no dungeon pages in {oog / 'dungeons'} (run: crawl --dungeons)", file=sys.stderr)
         return 2
-    dungeons = _read(curated / "dungeons.generated.toml").get("dungeons") or {}
+    dungeons = read_toml(curated / "dungeons.generated.toml").get("dungeons") or {}
     known = {int(p.stem) for p in (oog / "quests").glob("*.json") if p.stem.isdigit()}
     lists, report = build_quest_lists(pages, dungeons, known)
     write_quests_toml(lists, curated / "dungeons.quests.generated.toml")
@@ -176,7 +178,7 @@ def main(argv=None) -> int:
     b.add_argument("--curated", default="data/curated", help="directory with zones.toml and dungeons.toml")
     b.add_argument("--census", default="data/census/maps.json")
     b.add_argument("--levels", default="data/vendor/openmap/Levels.lua",
-                   help="OpenMap Levels.lua (zone level ranges for a provisional build)")
+                   help="OpenMap Levels.lua (zone level ranges; zones.toml levels win, quest percentiles fill the rest)")
     b.add_argument("--out", default="LevelingAdvisor/Data")
     b.add_argument("--report", default="data/build/report.json")
     b.set_defaults(func=cmd_build)

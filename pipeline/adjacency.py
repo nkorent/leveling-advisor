@@ -25,8 +25,8 @@ def _local(value: float, lo: float, hi: float) -> float:
     return round((value - lo) / (hi - lo) * 100, 1)
 
 
-def _edge_link(src: int, dst: int, a: list, b: list, direction: str, seg: tuple[float, float], horizontal: bool) -> dict:
-    """Link from zone a (rect `a`) across the edge it shares with b; (x, y) in a's own 0-100 coordinates."""
+def _edge_link(src: int, dst: int, a: list, direction: str, seg: tuple[float, float], horizontal: bool) -> dict:
+    """Link from zone src (rect `a`) across the edge it shares with dst; (x, y) in a's own 0-100 coordinates."""
     mid = (seg[0] + seg[1]) / 2
     left, right, top, bottom = a
     if horizontal:   # edge runs along x: crossing at the top or bottom edge
@@ -62,8 +62,8 @@ def walk_links(census: dict, zone_ids=None) -> list[dict]:
                 (at, bb, "north", "south", True, _overlap(al, ar, bl, br)),
             ):
                 if span and abs(a_edge - b_edge) <= EDGE_TOLERANCE:
-                    links.append(_edge_link(a_id, b_id, a["rect"], b["rect"], da, span, horizontal))
-                    links.append(_edge_link(b_id, a_id, b["rect"], a["rect"], db, span, horizontal))
+                    links.append(_edge_link(a_id, b_id, a["rect"], da, span, horizontal))
+                    links.append(_edge_link(b_id, a_id, b["rect"], db, span, horizontal))
     return links
 
 

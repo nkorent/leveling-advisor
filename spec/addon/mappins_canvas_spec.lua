@@ -172,12 +172,15 @@ describe("the game's waypoint pin at our waypoint", function()
   end)
 
   it("the OnAcquired hook hides it again when the map acquires it anew", function()
-    local ns, env, _, _, wm = open()
+    local ns, env, fake, _, wm = open()
     ns.MapPins.setWaypoint(GIVER)
+    fake.flush() -- setWaypoint's own deferred sweep
+    local p = wm.providers
+    p[1], p[#p] = p[#p], p[1] -- ours refreshes first: its sweep runs before the game's pin is back
     wm:SetMapID(1440)
     assert.equal(0, #sharingPins(wm))
     wm:SetMapID(1439) -- the pooled pin is shown by AcquirePin, then hidden by our hook
-    assert.is_false(onlySharingPin(wm):IsShown())
+    assert.is_false(onlySharingPin(wm):IsShown()) -- before any deferred sweep
     assert.same({}, env.errors)
   end)
 
@@ -186,13 +189,14 @@ describe("the game's waypoint pin at our waypoint", function()
     ns.MapPins.setWaypoint(GIVER)
     local pin = onlySharingPin(wm)
     assert.is_false(pin:IsShown())
+    fake.flush() -- setWaypoint's own deferred sweep: from here on only the event's sweeps run
     pin:Show() -- the game redraws its pin outside a map refresh
     ns.Events.dispatch("USER_WAYPOINT_UPDATED")
     assert.is_false(pin:IsShown())
     pin:Show()
     ns.Events.dispatch("USER_WAYPOINT_UPDATED")
     pin:Show() -- the game's provider redraws after our handler
-    fake.flush() -- the deferred sweep
+    fake.flush() -- the event's deferred sweep
     assert.is_false(pin:IsShown())
     assert.same({}, env.errors)
   end)
@@ -264,7 +268,9 @@ describe("the game's waypoint pin at our waypoint", function()
     ns.MapPins.setWaypoint(GIVER)
     fake.setUserWaypoint(1439, 0.3755, 0.4025)
     assert.is_true(ns.MapPins.isOurWaypoint())
-    fake.setUserWaypoint(1439, 0.377, 0.401)
+    fake.setUserWaypoint(1439, 0.377, 0.401) -- x off by 0.003
+    assert.is_false(ns.MapPins.isOurWaypoint())
+    fake.setUserWaypoint(1439, 0.374, 0.404) -- y off by 0.003
     assert.is_false(ns.MapPins.isOurWaypoint())
     fake.setUserWaypoint(1440, 0.374, 0.401)
     assert.is_false(ns.MapPins.isOurWaypoint())
@@ -297,13 +303,30 @@ describe("the game's waypoint pin at our waypoint", function()
     assert.same({}, env.errors)
   end)
 
-  it("a world map without pin enumeration or a mixin without OnAcquired does not error", function()
-    local ns, env, _, _, wm = open({ globals = { WaypointLocationPinMixin = {} } })
+  it("a world map without pin enumeration, or one whose enumeration errors, does not error", function()
+    local ns, env, fake, _, wm = open()
     rawset(wm, "EnumeratePinsByTemplate", nil)
-    ns.MapPins.setWaypoint(GIVER)
+    assert.is_true(ns.MapPins.setWaypoint(GIVER))
     ns.Events.dispatch("USER_WAYPOINT_UPDATED")
     rawset(wm, "EnumeratePinsByTemplate", function() error("boom") end)
     ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+    fake.flush()
+    assert.is_true(ns.MapPins.isOurWaypoint())
+    assert.same({}, env.errors)
+  end)
+
+  it("a sharing pin mixin without OnAcquired is not hooked, and nothing errors", function()
+    -- the world map without the game's waypoint pin provider: the mixin stays the given one
+    local ns, env, fake = ui.load({ state = "S18", worldMap = true, globals = { WaypointLocationPinMixin = {} } })
+    env.WorldMapFrame:SetMapID(1439)
+    env.WorldMapFrame:Show()
+    assert.same({}, env.WaypointLocationPinMixin)
+    assert.is_false(ns.MapPins.hookSharingPin())
+    assert.is_nil(env.WaypointLocationPinMixin.OnAcquired)
+    assert.is_true(ns.MapPins.setWaypoint(GIVER))
+    ns.Events.dispatch("USER_WAYPOINT_UPDATED")
+    fake.flush()
+    assert.is_true(ns.MapPins.isOurWaypoint())
     assert.same({}, env.errors)
   end)
 

@@ -790,11 +790,12 @@ local function newClient(opts)
     function view:SetPadding(...) self.padding = { ... } end
     return view
   end
-  g.ScrollUtil = setmetatable({
+  -- Only what the addon calls: like the widget fake, anything else is nil.
+  g.ScrollUtil = {
     InitScrollBoxListWithScrollBar = function(box, bar, view)
       box.view, box.scrollBar = view, bar
     end,
-  }, { __index = function() return function() end end })
+  }
   g.ScrollBoxConstants = { RetainScrollPosition = true, DiscardScrollPosition = false }
   g.CreateDataProvider = function(list)
     local dp = { collection = {} }
@@ -857,6 +858,7 @@ local function newClient(opts)
   g.C_SuperTrack = {
     SetSuperTrackedUserWaypoint = function(v) fake.superTracked = v end,
     SetSuperTrackedQuestID = function(id) fake.superTrackedQuest = id end,
+    GetSuperTrackedQuestID = function() return fake.superTrackedQuest or 0 end,
   }
   g.OpenWorldMap = function(mapID) fake.openedMaps[#fake.openedMaps + 1] = mapID end
   -- hooksecurefunc([table,] name, hook): the original runs first, then the hook with the same
@@ -1008,7 +1010,7 @@ local function newClient(opts)
     local root = {}
     function root:CreateTitle(t) m.title = t end
     function root:CreateButton(label, fn)
-      local entry = { label = label, fn = fn }
+      local entry = { label = label, fn = fn, enabled = true } -- a client button starts enabled
       m.buttons[#m.buttons + 1] = entry
       return { SetEnabled = function(_, v) entry.enabled = v and true or false end }
     end

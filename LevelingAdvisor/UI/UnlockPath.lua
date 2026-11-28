@@ -232,7 +232,7 @@ local function stepRow(s, r, ix, step, index, path)
   setLevel(r, step.level, ns.Difficulty.color(step.level, state.level, state.greyAtOrBelow))
   r.name:SetText((step.reason ~= "missing" and step.name) or "Unknown quest")
   local ink = status == "done" and DONE_INK or Style.INK
-  r.name:SetTextColor(ink[1], ink[2], ink[3])
+  Style.setTextColor(r.name, ink[1], ink[2], ink[3])
   -- the anti-goal: only the path's first startable step says where to start
   local first = index == path.first and status == "start"
   local pin = (status == "start" or status == "progress") and step.giver ~= nil
@@ -258,7 +258,7 @@ local function thisRow(s, r, path, quest)
   local state = s.state
   setLevel(r, level, quest.color or ns.Difficulty.color(level, state.level, state.greyAtOrBelow))
   r.name:SetText(quest.title or (q and q.name) or "Unknown quest")
-  r.name:SetTextColor(Style.INK[1], Style.INK[2], Style.INK[3])
+  Style.setTextColor(r.name, Style.INK[1], Style.INK[2], Style.INK[3])
   local place = where(s.db, q and q.giver)
   r.sub:SetText("This quest" .. (place and (" · " .. place) or ""))
   r.bg:Hide()

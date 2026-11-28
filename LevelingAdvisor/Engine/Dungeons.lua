@@ -4,17 +4,16 @@ local _, ns = ...
 local Dungeons = {}
 ns.Dungeons = Dungeons
 
-local FACTION_ID = { Alliance = 1, Horde = 2 }
-local WORDS = { "one", "two", "three", "four" }
+local WORDS = { [2] = "two", [3] = "three", [4] = "four" }
 
+-- The reason line: the best level, and how many of the quests start on the way.
 local function reasonFor(bestLevel, onWay)
-  if onWay <= 0 then return "Best at " .. bestLevel end
-  local n = WORDS[onWay] or tostring(onWay)
-  if onWay == 1 then
-    return "Best at " .. bestLevel .. " — one of its quests starts on your way"
-  end
-  return "Best at " .. bestLevel .. " — " .. n .. " of its quests start on your way"
+  local text = "Best at " .. bestLevel
+  if onWay <= 0 then return text end
+  if onWay == 1 then return text .. " — one of its quests starts on your way" end
+  return text .. " — " .. (WORDS[onWay] or tostring(onWay)) .. " of its quests start on your way"
 end
+Dungeons.reasonFor = reasonFor
 
 local function dist(db, from, p)
   if not (from and from[1] and from[2] and from[3] and p and p.mapID and p.x and p.y) then return nil end
@@ -56,7 +55,7 @@ function Dungeons.recommend(db, state, candidates, zones, reach)
   if state.settings and state.settings.dungeons == false then return nil end
   local T = ns.Tuning
   local level = state.level
-  local factionID = FACTION_ID[state.faction]
+  local factionID = ns.Eligibility.FACTION_ID[state.faction]
   reach = reach or ns.Travel.fromPlayer(db, state)
 
   local byID
@@ -78,8 +77,7 @@ function Dungeons.recommend(db, state, candidates, zones, reach)
   local best, bestScore, bestKey
   for _, key in ipairs(db:dungeonKeys()) do
     local d = db:dungeon(key)
-    local otherFaction = (d.faction == 1 or d.faction == 2) and d.faction ~= factionID
-    if d.live and not otherFaction and d.minLevel and d.maxLevel
+    if d.live and not ns.Eligibility.otherFaction(d.faction, factionID) and d.minLevel and d.maxLevel
         and level >= d.minLevel - T.DUNGEON_LEVEL_WINDOW and level <= d.maxLevel then
       local list = {}
       for _, id in ipairs(d.quests or {}) do
@@ -96,10 +94,10 @@ function Dungeons.recommend(db, state, candidates, zones, reach)
         for _, c in ipairs(list) do
           xp = xp + (ns.XP.estimate(c.quest, atLevel, state.recordedXP) or 0)
         end
-        local e = d.entrance or {}
-        local score = xp + T.DUNGEON_RUN_XP
-          - ns.Travel.costTo(db, reach, state, { e.mapID or e[1], e.x or e[2], e.y or e[3] })
-        if bestScore == nil or score > bestScore or (score == bestScore and key < bestKey) then
+        local em, ex, ey = ns.Geo.unpackPoint(d.entrance or {})
+        local score = xp + T.DUNGEON_RUN_XP - ns.Travel.costTo(db, reach, state, { em, ex, ey })
+        -- ties keep the first key (dungeonKeys is sorted)
+        if bestScore == nil or score > bestScore then
           bestScore, bestKey = score, key
           best = { d = d, list = list, xp = xp }
         end
@@ -131,12 +129,12 @@ function Dungeons.recommend(db, state, candidates, zones, reach)
   table.sort(levels)
   -- within the dungeon's range; above it (all quests too high) or fewer than two quests: the old text
   local bestLevel = Dungeons.bestLevel(levels, d)
-  local e = d.entrance or {}
+  local em, ex, ey = ns.Geo.unpackPoint(d.entrance or {})
   return {
     key = bestKey, name = d.name, minLevel = d.minLevel, maxLevel = d.maxLevel,
     groupSize = d.groupSize, questCount = #best.list, xp = best.xp,
     bestLevel = bestLevel, reason = reasonFor(bestLevel, onWay),
-    entrance = { mapID = e.mapID or e[1], x = e.x or e[2], y = e.y or e[3] },
+    entrance = { mapID = em, x = ex, y = ey },
     pickups = pickups,
   }
 end

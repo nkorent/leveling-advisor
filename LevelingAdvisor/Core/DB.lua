@@ -121,7 +121,8 @@ function DB:stub(id)
   return s
 end
 
--- Fresh sorted copy each call.
+-- Fresh ascending copy each call (questsInZone too: byZone is filled in id order).
+-- Candidates, Route and Travel rely on this and do not sort again.
 function DB:questIDs() return copyList(self.ids) end
 function DB:stubIDs() return sortedKeys(self.data.questStubs) end
 function DB:questsInZone(mapID) return copyList(self.byZone[mapID]) end

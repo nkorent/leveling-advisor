@@ -154,7 +154,7 @@ describe("Engine performance", function()
       for _ = 1, 5 do Engine.compute(big, S18) end
       best = math.min(best, (os.clock() - t) / 5)
     end
-    assert.is_true(best < 0.010)
+    assert.is_true(best < 0.010, ("best %.2f ms"):format(best * 1000))
   end)
 
   it("routes the busiest synthetic zone under 15 ms", function()
@@ -176,7 +176,7 @@ describe("Engine performance", function()
       steps = Engine.route(big, S18, busiest, rec, clock)
       ms = math.min(ms, (os.clock() - t) * 1000)
     end
-    assert.is_true(ms < 15)
+    assert.is_true(ms < 15, ("best %.2f ms"):format(ms))
     assert.is_true(#steps > 0)
   end)
 end)

@@ -5,9 +5,7 @@ ns.Slash = Slash
 
 local say = ns.Util.say
 
-local function inCombat()
-  return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
-end
+local inCombat = ns.Util.inCombat
 
 local function printSummary()
   local A = ns.Advisor
@@ -20,7 +18,7 @@ local function printSummary()
     return
   end
   if inCombat() then
-    say("Not in combat: try again after the fight.")
+    say(ns.Util.COMBAT_MSG)
     return
   end
   local rec, err = A.compute()
@@ -42,10 +40,15 @@ local function questArg(arg)
   return nil
 end
 
+-- The ignore list changed: recompute.
+local function replanIgnored()
+  if ns.Advisor.scheduler then ns.Advisor.scheduler:request("settings") end
+end
+
 -- Shared by the slash commands and the quest menu.
 function Slash.setIgnored(id, on)
   ns.chardb.ignored[id] = on and true or nil
-  if ns.Advisor.scheduler then ns.Advisor.scheduler:request("settings") end
+  replanIgnored()
 end
 
 local function ignore(arg)
@@ -58,7 +61,7 @@ end
 local function unignore(arg)
   if arg:lower() == "all" then
     for k in pairs(ns.chardb.ignored) do ns.chardb.ignored[k] = nil end
-    if ns.Advisor.scheduler then ns.Advisor.scheduler:request("settings") end
+    replanIgnored()
     say("Cleared all ignored quests.")
     return
   end
@@ -158,7 +161,7 @@ local function guideCmd(arg)
   elseif arg == "off" then
     G.setEnabled(false)
     say("Guide off.")
-  elseif arg == "continue" then
+  elseif arg == "resume" or arg == "continue" then
     local status, t = G.continue()
     if status == "set" then
       say("Guide: waypoint set to " .. tostring(t and t.label) .. ".")
@@ -166,7 +169,7 @@ local function guideCmd(arg)
       say(CONTINUED[status] or G.describe())
     end
   else
-    say("Usage: /advisor guide on|off|continue")
+    say("Usage: /advisor guide on|off|resume")
   end
 end
 
@@ -183,7 +186,7 @@ local function help()
   print("  /advisor pins — count the map pins on the current map")
   print("  /advisor tab [dx dy|reset] — nudge the quest-log bookmark tab")
   print("  /advisor minimap — show or hide the minimap button")
-  print("  /advisor guide [on|off|continue] — a waypoint to your next step")
+  print("  /advisor guide [on|off|resume] — a waypoint to your next step")
   print("  /advisor debug — diagnostics")
   print("  /advisor help — list the commands")
 end

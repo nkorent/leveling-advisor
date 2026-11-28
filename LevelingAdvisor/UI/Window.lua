@@ -241,7 +241,6 @@ local function buildFooter(f)
     })
   end)
   ver:SetScript("OnLeave", hideTooltip)
-  f.laVersion = ver
 end
 
 local function buildGear(f)

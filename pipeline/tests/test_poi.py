@@ -7,9 +7,9 @@ import pytest
 
 from pipeline.__main__ import main
 from pipeline.curated import load_dungeons, load_zones
+from pipeline.census import read_census_json
 from pipeline.poi import (CONTINENT_BOUNDS, ZoneHints, check_bounds, dungeons_toml, links_toml, load_openmap_places,
-                          load_zone_hints, locate, read_census, reference_dungeons, transport_links,
-                          world_to_continent)
+                          load_zone_hints, locate, reference_dungeons, transport_links, world_to_continent)
 
 HERE = Path(__file__).parent
 FIX = HERE / "fixtures" / "poi"
@@ -377,12 +377,6 @@ def test_openmap_sandboxed(tmp_path):
         load_openmap_places(p)
 
 
-def test_read_census_keys_are_ints(tmp_path):
-    p = tmp_path / "maps.json"
-    p.write_text(json.dumps({"maps": {"1414": {"name": "Kalimdor"}}, "areas": {}, "here": []}), encoding="utf-8")
-    assert read_census(p)["maps"] == {1414: {"name": "Kalimdor"}}
-
-
 # ---------------------------------------------------------------- merge into curated
 
 ZONES_TOML = '''
@@ -731,7 +725,7 @@ REAL = VENDOR_OPENMAP.is_file() and CENSUS.is_file()
 
 @pytest.fixture(scope="module")
 def real():
-    census = read_census(CENSUS)
+    census = read_census_json(CENSUS)
     check_bounds(census)
     zones = load_zones(CURATED / "zones.toml", census)
     hints = load_zone_hints(CURATED / "openmap_zone_hints.toml", census)

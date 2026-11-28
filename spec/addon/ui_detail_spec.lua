@@ -246,6 +246,24 @@ describe("quest detail page", function()
     assert.same({}, env.errors)
   end)
 
+  it("the giver marker follows the quest's status (soon reads as not yet available)", function()
+    load({ state = ui.with("S18", { level = 17 }) }) -- Raene's Cleansing (991) needs 18
+    ns.UI.open()
+    local function marker(id)
+      ns.UI.show({ kind = "zone", mapID = 1439, questID = id })
+      local m = ns.UI.RouteView.detail.parts.giver.marker
+      return { m.atlas or m.texture, m.desaturated }
+    end
+    assert.equal("soon", A(991)[1])
+    assert.same({ "QuestNormal", true }, marker(991))
+    assert.same({ "QuestNormal", false }, marker(4763))
+    assert.same({ "QuestTurnin", false }, marker(4730))
+    assert.same({ "QuestTurnin", true }, marker(966))
+    assert.same({ "Interface\\Buttons\\UI-CheckBox-Check", false }, marker(965))
+    assert.same({ "QuestNormal", true }, marker(6382))
+    assert.same({}, env.errors)
+  end)
+
   it("sections are named in layout order and stack top-down", function()
     load()
     ns.UI.open()
@@ -278,8 +296,15 @@ describe("quest detail page", function()
 
   it("selecting another quest drops the source", function()
     load()
+    ns.UI.open()
     ns.UI.show({ kind = "zone", mapID = 1439, questID = 4763, source = { section = "here", yards = 50.9 } })
-    ns.UI.select(4730)
+    assert.truthy(fake.visible(fake.text("Its quest giver is 51 yd from you.")))
+    ns.UI.select(7003) -- an available quest: a kept source would still say how far 4763's giver is
+    assert.equal(7003, ns.UI.current().questID)
+    assert.is_nil(ns.UI.current().source)
+    assert.truthy(fake.visible(fake.text("Step 2 of your Darkshore route.")))
+    assert.falsy(fake.visible(fake.text("Its quest giver is 51 yd from you.")))
+    ns.UI.select(4730) -- a complete one
     assert.truthy(fake.visible(fake.text("It is complete: turn it in to Marine Tidehunter.")))
   end)
 

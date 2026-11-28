@@ -113,7 +113,7 @@ local function routeEntry(db, q, mapID, place, state)
   }
 end
 
--- C1 (spec 2, first anti-goal): a "!" only for a quest the player can pick up
+-- The first anti-goal: a "!" only for a quest the player can pick up
 -- right now (Advisor.canPickUp: Eligibility "eligible"). With a player state
 -- and nothing to check it with, nothing is a pickup; without a state (the pure
 -- model on its own) the rows' own state decides.
@@ -216,12 +216,12 @@ local function zoneRoute(A, mapID)
 end
 
 -- The "Show on map" pin (Nav): one entry { mapID, x, y, kind, quests }, shown
--- on its own map even when pinsAll is off. Since 0.3.0 only when the client
+-- on its own map even when pinsAll is off, and only when the client
 -- could not set a waypoint (the game's super-track pinpoint marks it otherwise).
 local focus
 local FOCUS_SECTION = "Shown on map"
 
--- F26: the focus goes once its quest is done, or (for a pickup) accepted.
+-- The focus goes once its quest is done, or (for a pickup) accepted.
 local function focusStale(state)
   local q = focus.quests[1]
   local id = q and q.id
@@ -263,8 +263,6 @@ function MapPins.model(mapID)
   return pins
 end
 
-local function currentModel(mapID) return MapPins.model(mapID) end
-
 local function currentMapID()
   if method(WorldMapFrame, "IsShown") then return method(WorldMapFrame, "GetMapID") end
   local best = type(C_Map) == "table" and call(C_Map.GetBestMapForUnit, "player")
@@ -274,7 +272,7 @@ end
 -- Pins the map would show for the current map (for /advisor pins).
 function MapPins.count()
   local id = currentMapID()
-  return id and #currentModel(id) or 0
+  return id and #MapPins.model(id) or 0
 end
 
 local function mapName(mapID)
@@ -291,7 +289,7 @@ function MapPins.describe()
   if not (last and last.rec) then return "No recommendation yet: type /advisor first" end
   local id = currentMapID()
   if not id then return "No map to count pins on." end
-  return string.format("Pins on map %s (%s): %d", mapName(id), tostring(id), #currentModel(id))
+  return string.format("Pins on map %s (%s): %d", mapName(id), tostring(id), #MapPins.model(id))
 end
 
 ---------------------------------------------------------------------------
@@ -404,11 +402,9 @@ LevelingAdvisorMapPinMixin = (CreateFromMixins and MapCanvasPinMixin)
   and CreateFromMixins(MapCanvasPinMixin) or {}
 local Pin = LevelingAdvisorMapPinMixin
 
-local function inCombat()
-  return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
-end
+local inCombat = ns.Util.inCombat
 
--- I4: SetPassThroughButtons is restricted for addon code in combat on modern
+-- SetPassThroughButtons is restricted for addon code in combat on modern
 -- engines: a blocked action ("Interface action failed because of an AddOn"),
 -- not a Lua error, so pcall does not help. Our OnLoad and MapCanvas's own
 -- AcquirePin both call it on our pins (HereBeDragons-Pins stubs it for the
@@ -521,10 +517,8 @@ local function ran(fn, ...)
   return type(fn) == "function" and pcall(fn, ...) or false
 end
 
-local zoneName = mapName
-
 ---------------------------------------------------------------------------
--- Our waypoint and the game's square waypoint pin (0.3.0). The game marks a
+-- Our waypoint and the game's square waypoint pin. The game marks a
 -- super-tracked user waypoint twice: its super-track pinpoint and, on the
 -- world map, the square user-waypoint pin (Blizzard's WaypointLocationPinTemplate,
 -- WaypointLocationDataProviderMixin). While the user waypoint is the one we set,
@@ -668,7 +662,7 @@ function MapPins.setWaypoint(entry, opts)
   if quiet then return true end
   local first = entry.quests[1]
   ns.Util.say(string.format("Waypoint set: %s (%s %.1f, %.1f)",
-    tostring(first and first.name), zoneName(entry.mapID), entry.x, entry.y))
+    tostring(first and first.name), mapName(entry.mapID), entry.x, entry.y))
   return true
 end
 
@@ -758,7 +752,7 @@ local function newProvider()
     self:RemoveAllData()
     local map = self:GetMap()
     if not map then return end
-    for _, entry in ipairs(currentModel(map:GetMapID())) do
+    for _, entry in ipairs(MapPins.model(map:GetMapID())) do
       -- Under pcall: a failure must not break the map's refresh of all providers.
       local ok, err = pcall(map.AcquirePin, map, TEMPLATE, entry)
       if not ok then geterrorhandler()(err) end
@@ -771,8 +765,16 @@ local function newProvider()
   return p
 end
 
-local function refresh()
+local function draw()
   if provider then provider:RefreshAllData() end
+end
+
+-- Redraws only while the world map is shown: pins for a closed map are wasted
+-- work (a plan scan or route per advisor result). The map redraws on show
+-- (MapCanvas refreshes its providers, and our OnShow hook calls draw).
+-- `~= false`: a client or fake without IsShown still redraws.
+local function refresh()
+  if method(WorldMapFrame, "IsShown") ~= false then draw() end
 end
 
 -- entry: { mapID, x, y, kind = "pickup"|"turnin", quests = { { id, name, ... } } }
@@ -819,7 +821,7 @@ function MapPins.install()
   if type(WorldMapFrame.HookScript) == "function" then
     WorldMapFrame:HookScript("OnShow", safe(function()
       call(ns.Advisor and ns.Advisor.setMapShown, true)
-      refresh()
+      draw()
     end))
     WorldMapFrame:HookScript("OnHide", safe(function()
       call(ns.Advisor and ns.Advisor.setMapShown, false)

@@ -219,13 +219,11 @@ local function build()
   return f, box
 end
 
-local function inCombat()
-  return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
-end
+local inCombat = ns.Util.inCombat
 
 function Export.run()
   if inCombat() then
-    ns.Util.say("Not in combat: try again after the fight.")
+    ns.Util.say(ns.Util.COMBAT_MSG)
     return
   end
   local store = ns.db and ns.db.recorder or {}

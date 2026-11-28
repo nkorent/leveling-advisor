@@ -70,9 +70,13 @@ end
 -- Widget helpers.
 ---------------------------------------------------------------------------
 -- Dark text (relative luminance under 0.5) is ink for the parchment.
+local function luminance(r, g, b)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+end
+
 function Style.isInk(color)
   if type(color) ~= "table" then return false end
-  return 0.2126 * color[1] + 0.7152 * color[2] + 0.0722 * color[3] < 0.5
+  return luminance(color[1], color[2], color[3]) < 0.5
 end
 
 -- GameFont* objects carry a black drop shadow meant for dark backgrounds; on
@@ -94,7 +98,7 @@ end
 -- font's usual shadow back when a recoloured FontString turns light again.
 function Style.setTextColor(fs, r, g, b)
   fs:SetTextColor(r, g, b)
-  if Style.isInk({ r, g, b }) then
+  if luminance(r, g, b) < 0.5 then
     Style.ink(fs)
   elseif fs.laInked then
     fs:SetShadowOffset(1, -1)

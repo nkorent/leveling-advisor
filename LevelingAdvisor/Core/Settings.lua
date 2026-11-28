@@ -80,7 +80,7 @@ local function addCheckbox(frame, index, opt)
   label:SetText(opt.label)
   cb:SetScript("OnClick", function(self)
     local on = self:GetChecked() and true or false
-    Settings_.set(opt.key, opt.value and opt.value(on) or on)
+    Settings_.set(opt.key, on)
   end)
   return cb
 end
@@ -94,11 +94,7 @@ local function buildPanel()
   about:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -16 - #OPTIONS * 30 - 12)
   about:SetText(Settings_.aboutLine())
   frame:SetScript("OnShow", function()
-    for i, opt in ipairs(OPTIONS) do
-      local v = Settings_.get(opt.key)
-      if opt.checked then v = opt.checked(v) end
-      boxes[i]:SetChecked(v)
-    end
+    for i, opt in ipairs(OPTIONS) do boxes[i]:SetChecked(Settings_.get(opt.key)) end
     about:SetText(Settings_.aboutLine())
   end)
   return frame
@@ -130,8 +126,8 @@ function Settings_.registerPanel()
 end
 
 function Settings_.open()
-  if InCombatLockdown and InCombatLockdown() then
-    ns.Util.say("Not in combat: try again after the fight.")
+  if ns.Util.inCombat() then
+    ns.Util.say(ns.Util.COMBAT_MSG)
     return
   end
   if not panelCategory then Settings_.registerPanel() end

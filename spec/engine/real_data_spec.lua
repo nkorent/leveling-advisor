@@ -83,7 +83,6 @@ end
         end
       end
     end
-    print(("prerequisite ids with neither quest nor stub: %d of %d"):format(missing, total))
     assert.is_true(total > 0)
     assert.is_true(missing < total * 0.05, "unresolved prerequisites: " .. missing .. " of " .. total)
   end)
@@ -112,8 +111,12 @@ end
     assert.same({ { 5952, 8 } }, b.items.required)
   end)
 
-  it("objective data is consistent: indices in range, no made-up required count of 1", function()
-    local quests, withObjectives, points, indexed = 0, 0, 0, 0
+  -- the pipeline's spelled-out numbers (pipeline/objectives.py NUMBER_WORDS)
+  local NUMBER_WORDS = { "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
+    "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty" }
+
+  it("objective data is consistent: indices in range, every count written in the objective text", function()
+    local quests, withObjectives, points, indexed, counts = 0, 0, 0, 0, 0
     for _, id in ipairs(db:questIDs()) do
       local q = db:quest(id)
       local r = ns.Data.quests[id]
@@ -131,15 +134,33 @@ end
         assert.is_truthy(o.kind >= 1 and o.kind <= 4, "quest " .. id)
         assert.is_true(o.count == nil or (o.count >= 1 and o.count % 1 == 0), "quest " .. id)
         assert.is_true(o.from == nil or (#o.from >= 1 and #o.from <= 3), "quest " .. id)
+        if o.count then
+          -- never made up (a default of 1, say): the number stands in the text, in digits or a word
+          counts = counts + 1
+          local text = (q.objectiveText or ""):lower()
+          local word = NUMBER_WORDS[o.count]
+          assert.is_truthy(text:find("%f[%w]" .. o.count .. "%f[%W]")
+            or (word and text:find("%f[%a]" .. word .. "%f[%A]")),
+            "quest " .. id .. ": count " .. o.count .. " is not in its text")
+        end
       end
     end
-    print(("objectives: %d of %d quests; %d of %d points indexed"):format(withObjectives, quests, indexed, points))
-    assert.is_true(withObjectives > 2000)
-    assert.is_true(indexed > points * 0.95)
+    assert.is_true(withObjectives > 2000, ("objectives on %d of %d quests"):format(withObjectives, quests))
+    assert.is_true(indexed > points * 0.95, ("%d of %d points indexed"):format(indexed, points))
+    assert.is_true(counts > 1000, "counts: " .. counts)
   end)
 
-  it("covers both factions, every grid race and levels 1 to 58", function()
-    assert.equals(72, #chars)
+  it("gives every character of the grid (both factions, every grid race, levels 1 to 58) zones and rows", function()
+    assert.equals(72, #runs)
+    local factions = {}
+    for _, r in ipairs(runs) do
+      local rows = 0
+      for _, sec in ipairs(r.rec.sections) do rows = rows + #sec.rows end
+      assert.is_true(#r.rec.zones > 0, label(r.state) .. ": no zone")
+      assert.is_true(rows > 0, label(r.state) .. ": no row")
+      factions[r.state.faction] = true
+    end
+    assert.same({ Alliance = true, Horde = true }, factions)
   end)
 
   local function quest(id) return db:quest(id) end
@@ -313,8 +334,6 @@ end
         -- the steps of the player's own map too (computed in setup)
         checkFit(r.state, r.rec, r.steps, label(r.state) .. " (own map)")
       end
-      print(("level fit: %d rows, %d route actions, %d dungeon pickups, %d later rows"):format(
-        total.rows, total.actions, total.pickups, total.later))
       assert.is_true(total.rows > 100, "rows: " .. total.rows)
       assert.is_true(total.actions > 1000, "route actions: " .. total.actions)
       assert.is_true(total.pickups > 0, "dungeon pickups: " .. total.pickups)

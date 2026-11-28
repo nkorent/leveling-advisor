@@ -15,6 +15,10 @@ Commands (from the repo root):
     .venv/bin/python -m pipeline crawl                  # outof.games -> data/build/outofgames/ (resumable)
     .venv/bin/python -m pipeline crawl --refresh-lists  # same, but list pages are requested again (new quest ids)
     .venv/bin/python -m pipeline crawl --reparse        # rebuild the parsed JSON from the cached HTML (offline)
+    .venv/bin/python -m pipeline crawl --dungeons       # the dungeon list and dungeon pages only
+    .venv/bin/python -m pipeline dungeon-quests         # dungeon pages -> data/curated/dungeons.quests.generated.toml
+    .venv/bin/python -m pipeline census                 # in-game census SavedVariables -> data/census/maps.json
+    .venv/bin/python -m pipeline import-recorder FILE   # recorder export strings (one per line, - for stdin) -> data/recorder/
     .venv/bin/python -m pipeline build                  # -> LevelingAdvisor/Data/*.lua + data/build/report.json
     .venv/bin/python -m pipeline build --provisional    # same, before the in-game census exists
     .venv/bin/python -m pipeline poi                    # OpenMap + census -> data/curated/*.generated.toml

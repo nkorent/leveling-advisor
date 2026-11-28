@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from pipeline.build import read_census
+from pipeline.census import read_census_json
 from pipeline.curated import load_generated_links, load_zones_with_problems
 
 ROOT = Path(__file__).parents[2]
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.skipif(not CENSUS.is_file(), reason="data/census/maps.j
 
 @pytest.fixture(scope="module")
 def loaded():
-    census = read_census(CENSUS)
+    census = read_census_json(CENSUS)
     zones, problems = load_zones_with_problems(CURATED / "zones.toml", census, CURATED / "links.generated.toml")
     return census, zones, problems
 

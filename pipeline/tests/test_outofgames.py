@@ -252,3 +252,12 @@ def test_npc_side_unknown_gives_none(side, faction):
                       fx("npc-3649.html"))
     assert n == 1
     assert parse_npc(html, URL_NPC)["faction"] == faction
+
+
+@pytest.mark.parametrize("label,expected", [
+    ("Finish one of", True), ("finish any of", True), ("Finish either", True), ("FINISH ONE OF", True),
+    ("Finish first", False), ("Faction", False), ("Not available after", False), ("one of", False),
+])
+def test_is_finish_any_label(label, expected):
+    from pipeline.outofgames import is_finish_any_label
+    assert is_finish_any_label(label) is expected

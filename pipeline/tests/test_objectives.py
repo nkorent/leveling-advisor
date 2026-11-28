@@ -76,6 +76,9 @@ def point(name, map_id=1429, x=45.2, y=35.2):
      ["Basilisk Brain"], 1),
     ("Free nine Servants of Razelikh, three Servants of Sevine.", ["Servants of Razelikh Freed", "Servant of Razelikh"],
      9),
+    # at most three small words between the number and the name
+    ("Bring 5 of the best Gizmos.", ["Gizmo"], 5),
+    ("Bring 5 of the very best Gizmos.", ["Gizmo"], None),
 ])
 def test_count_rule(text, aliases, expected):
     assert count_in_text(text, aliases) == expected
@@ -121,6 +124,7 @@ def test_a_number_that_does_not_quantify_the_objective_is_no_count(qid, text, al
     "Bring Gizmos to the level 4 gizmo vault.",      # after Level
     "Bring Gizmos to the Rank 4 gizmo pile.",        # after Rank
     "Bring Gizmos to unit X-7 4 gizmos away.",       # after (or inside) a hyphenated token
+    "Bring the 3-pronged Gizmo to Bob.",             # before a hyphen: part of a word, not a count
     "Bring Gizmos to unit 04 gizmo hall.",           # a designation with a leading zero
 ])
 def test_numbers_that_are_never_quantities(text):

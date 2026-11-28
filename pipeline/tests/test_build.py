@@ -1,5 +1,4 @@
 """build command (Task 6 + rulings): provisional and census builds, coordinate check, CLI."""
-import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -415,18 +414,6 @@ def test_cli_rejects_unknown_without_source(tmp_path):
     with pytest.raises(SystemExit) as e:
         main(["build", "--provisional", "--without", "outofgames", *cli_paths(tmp_path)])
     assert e.value.code == 2
-
-
-@pytest.mark.skipif(importlib.util.find_spec("pipeline.recorder_import") is not None,
-                    reason="recorder importer exists; the note is only for its absence")
-def test_cli_recorder_without_importer_is_noted(tmp_path):
-    write_oog(tmp_path / "oog", [oq(1)])
-    (tmp_path / "recorder").mkdir()
-    rc = main(["build", "--provisional", "--without", "questie", "--recorder", str(tmp_path / "recorder"),
-               *cli_paths(tmp_path)])
-    assert rc == 0
-    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
-    assert any("recorder" in n and "skipped" in n for n in report["notes"])
 
 
 @pytest.mark.skipif(luajit() is None, reason="luajit not installed")

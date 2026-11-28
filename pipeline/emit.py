@@ -5,7 +5,7 @@ is LevelingAdvisor/Core/DB.lua. Every file starts with HEADER, then ``local _, n
 ``ns.Data = ns.Data or {}``. Records are positional where Contract A says so (quests, NPCs,
 points, places) and named elsewhere (zones, dungeons, meta, rewards, items, prereq).
 
-Inputs use the snake-case names of the merge (``pipeline.merge``) and of Task 7's curated loaders;
+Inputs use the snake-case names of the merge (``pipeline.merge``) and of the curated loaders;
 enums arrive as strings and are encoded here. An unknown enum value raises ValueError rather
 than being written as nil. Coordinates (0-100 map units) are rounded to 1 decimal. Empty optional
 parts (no prerequisites, no items, ...) are written as nil, which the decoder reads as empty.

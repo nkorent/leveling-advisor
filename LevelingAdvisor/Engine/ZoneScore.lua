@@ -6,8 +6,6 @@ local _, ns = ...
 local ZoneScore = {}
 ns.ZoneScore = ZoneScore
 
-local FACTION_ID = { Alliance = 1, Horde = 2 }
-
 local function countable(c)
   return ns.Candidates.recommendable(c) and not c.quest.dungeonQuest
 end
@@ -15,7 +13,7 @@ end
 local function usableZone(z, factionID)
   if not (z and z.live) then return false end
   if z.kind ~= nil then return false end    -- cities and battlegrounds are not leveling zones
-  return not ((z.faction == 1 or z.faction == 2) and z.faction ~= factionID)
+  return not ns.Eligibility.otherFaction(z.faction, factionID)
 end
 
 -- green: how many of the zone's counted quests are eligible green ones (not logged); total: all of them.
@@ -25,10 +23,10 @@ local function reasonFor(db, state, zone, isHere, green, total)
     return "Catch up — " .. green .. (green == 1 and " quest" or " quests") .. " you skipped at your level"
   end
   local here = state.mapID and db:zone(state.mapID)
-  local factionID = FACTION_ID[state.faction]
+  local factionID = ns.Eligibility.FACTION_ID[state.faction]
   for _, l in ipairs(here and here.links or {}) do
     -- never name the other faction's transport (spec 5.4)
-    local usable = not ((l.faction == 1 or l.faction == 2) and l.faction ~= factionID)
+    local usable = not ns.Eligibility.otherFaction(l.faction, factionID)
     if l.to == zone and usable then
       if l.kind == "walk" then return "Next zone — " .. l.label end
       return "Alternative — " .. l.label
@@ -39,7 +37,7 @@ end
 
 function ZoneScore.rank(db, state, candidates, reach)
   local T = ns.Tuning
-  local factionID = FACTION_ID[state.faction]
+  local factionID = ns.Eligibility.FACTION_ID[state.faction]
   reach = reach or ns.Travel.fromPlayer(db, state)
 
   -- group counted candidates by zone, in ascending quest ID order
@@ -75,7 +73,7 @@ function ZoneScore.rank(db, state, candidates, reach)
     for _, c in ipairs(list) do
       local q = c.quest
       local hubFactor = 1 + math.min(T.HUB_BONUS * ((sharing[q.id] or 1) - 1), T.HUB_BONUS_CAP)
-      local solo = (q.elite or (q.groupSize or 0) >= 2) and T.ELITE_SOLO_FACTOR or 1
+      local solo = ns.Candidates.isGroupQuest(q) and T.ELITE_SOLO_FACTOR or 1
       -- a turn-in is worth its full XP whatever its colour: the trip is made anyway
       local weight = c.status == "complete" and T.FIT_WEIGHT.yellow or (T.FIT_WEIGHT[c.fit] or 1)
       score = score + c.xp * solo * hubFactor * weight

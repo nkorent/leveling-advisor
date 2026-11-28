@@ -12,13 +12,17 @@ QuestInfo.MARKER_FILES = {
 }
 
 -- state: "available" | "complete" | "progress" | "done" | "unavailable".
--- Returns { atlas, desaturated } or { file } (the done check).
+-- Returns { atlas, desaturated } or { file } (the done check): shared tables, read-only
+-- (every list row asks for one on each render).
+local MARKERS = {
+  complete = { atlas = "QuestTurnin", desaturated = false },
+  progress = { atlas = "QuestTurnin", desaturated = true },
+  done = { file = "Interface\\Buttons\\UI-CheckBox-Check" },
+  unavailable = { atlas = "QuestNormal", desaturated = true },
+  available = { atlas = "QuestNormal", desaturated = false },
+}
 function QuestInfo.marker(state)
-  if state == "complete" then return { atlas = "QuestTurnin", desaturated = false } end
-  if state == "progress" then return { atlas = "QuestTurnin", desaturated = true } end
-  if state == "done" then return { file = "Interface\\Buttons\\UI-CheckBox-Check" } end
-  if state == "unavailable" then return { atlas = "QuestNormal", desaturated = true } end
-  return { atlas = "QuestNormal", desaturated = false }
+  return MARKERS[state] or MARKERS.available
 end
 
 -- An NPC place's name, or nil (kind 1 with a record in the data).
@@ -106,7 +110,7 @@ function QuestInfo.tags(row, q, db, state)
 end
 
 ---------------------------------------------------------------------------
--- Availability, rows, chains, "Why Now" and the detail model (Task 6).
+-- Availability, rows, chains, "Why Now" and the detail model.
 ---------------------------------------------------------------------------
 local FACTION_NAMES = { [1] = "Alliance", [2] = "Horde" }
 
@@ -119,9 +123,9 @@ local function firstMissingPrereq(q, state)
   return (prereq.any or {})[1]
 end
 
--- ns.Unlock[name](db, questID, state), or nil. Fail-soft: Engine/Unlock.lua is new in 0.2.0
--- and is not loaded after an update without a client restart (/reload only). An error inside
--- it is reported, never raised, so the page or row still renders.
+-- ns.Unlock[name](db, questID, state), or nil. Fail-soft: a file added in an update is not
+-- loaded until the client restarts (/reload is not enough), so Engine/Unlock.lua may be
+-- missing. An error inside it is reported, never raised, so the page or row still renders.
 local function fromUnlock(name, db, questID, state)
   local Unlock = ns.Unlock
   local f = type(Unlock) == "table" and Unlock[name]
@@ -139,7 +143,7 @@ function QuestInfo.unlockPath(db, questID, state)
 end
 
 -- A quest's chain position { index, length } (Unlock.position), or nil: every "Chain n/m" and
--- "step n of m" text comes from here, so it counts the quests the Unlock Path counts (R7).
+-- "step n of m" text comes from here, so it counts the quests the Unlock Path counts.
 function QuestInfo.chainPosition(db, questID, state)
   return fromUnlock("position", db, questID, state)
 end
@@ -217,24 +221,11 @@ function QuestInfo.availability(db, q, state, path)
   return "unavailable", text, short, reason
 end
 
--- Mirrors Engine/Sections.lua rowYards (Engine is off limits, so the copy is forced).
+-- Yards from the player to a place (nil without the player's position); the
+-- giver box uses it.
 local function dist(db, state, point)
   if not (state.mapID and state.x and state.y and point) then return nil end
   return (ns.Geo.distance(db, { state.mapID, state.x, state.y }, point))
-end
-
-local function rowYards(db, state, q, status)
-  if status == "complete" then return dist(db, state, q.turnIn) end
-  if status == "progress" then
-    local best
-    for _, p in ipairs(q.points or {}) do
-      local d = dist(db, state, p)
-      if d and (not best or d < best) then best = d end
-    end
-    if q.points and #q.points > 0 then return best end
-    return dist(db, state, q.turnIn)
-  end
-  return dist(db, state, q.giver)
 end
 
 -- Class files by class ID; a class mask bit is 2^(classID - 1).
@@ -245,7 +236,7 @@ local function hasBit(mask, bit)
   return math.floor(mask / bit) % 2 == 1
 end
 
--- I3: the class a class quest is for. The player's own class when the quest
+-- The class a class quest is for. The player's own class when the quest
 -- allows it (or names no class); otherwise the quest's one class; nil when it
 -- allows several other classes (the "Other class" status says enough).
 local function classTag(q, state)
@@ -279,7 +270,7 @@ function QuestInfo.row(db, questID, state)
     soon = status == "soon",
     xp = ns.XP.estimate(q, state.level, state.recordedXP),
     giver = { mapID = g.mapID, x = g.x, y = g.y, kind = g.kind, id = g.id },
-    yards = rowYards(db, state, q, status),
+    yards = ns.Sections.yards(db, state, q, status),
     short = short,
     -- no chain numbers: QuestInfo.tags shows the chain position when it renders the row
     tags = {
@@ -294,6 +285,7 @@ end
 -- List order of a row's status: what can be acted on now, then soon, done,
 -- then quests the player cannot take.
 local STATUS_GROUP = { available = 0, progress = 0, complete = 0, soon = 1, done = 2, unavailable = 3 }
+QuestInfo.STATUS_GROUP = STATUS_GROUP -- Search orders its matches by it
 
 function QuestInfo.statusGroup(row)
   if type(row) ~= "table" then return 3 end
@@ -455,7 +447,7 @@ function QuestInfo.detail(db, questID, state, source)
     objective = q.objectiveText,
     unlock = unlock,
   }
-  -- the chain position counts the quests the Unlock Path counts (R7), with or without a path
+  -- the chain position counts the quests the Unlock Path counts, with or without a path
   local pos = QuestInfo.chainPosition(db, questID, state)
   if pos then
     d.chainText = QuestInfo.chainText(pos) .. (pos.index == pos.length and " · last step" or "")
@@ -488,7 +480,7 @@ end
 -- Pure. Returns { mapID, mapName, points, others, complete, questID, objectiveText }
 -- or nil when no point of the quest has coordinates. An objective point carries its
 -- objective (Contract A field 26, DB-decoded) and is labelled with its name. No
--- player position: 0.3.0 dropped the player dot.
+-- player position (no player dot).
 function QuestInfo.miniMap(db, q, state)
   if type(q) ~= "table" then return nil end
   local cand = {}

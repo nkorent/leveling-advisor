@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Leveling Advisor
 ## Notes: Recommends zones, quests and dungeons for your level.
-## Version: 0.3.0
+## Version: 0.4.0
 ## IconTexture: Interface\AddOns\LevelingAdvisor\Media\Logo
 ## SavedVariables: LevelingAdvisorDB
 ## SavedVariablesPerCharacter: LevelingAdvisorCharDB

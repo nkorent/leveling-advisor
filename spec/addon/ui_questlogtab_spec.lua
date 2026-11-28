@@ -201,19 +201,6 @@ describe("quest log bookmark tab", function()
     ns.UI.close(); assert.is_false(tab.laSelected:IsShown())
   end)
 
-  it("shows a tooltip", function()
-    local _, _, fake = ui.load({ state = "S18", questMap = "plain" })
-    local tab = fake.named("LevelingAdvisorQuestLogTab1")
-    fake.enter(tab)
-    assert.equal(tab, fake.tooltip.owner)
-    assert.equal("ANCHOR_RIGHT", fake.tooltip.anchor)
-    assert.equal("Leveling Advisor", fake.tooltip.lines[1][1])
-    assert.equal("Open the leveling book", fake.tooltip.lines[2][1])
-    assert.is_true(fake.tooltip.shown)
-    fake.leave(tab)
-    assert.is_false(fake.tooltip.shown)
-  end)
-
   it("Review Focus 5: attaches when Blizzard_WorldMap loads later, once", function()
     local ns, env, fake = ui.load({ state = "S18", questMap = nil })
     assert.is_nil(fake.named("LevelingAdvisorQuestLogTab1"))
@@ -249,7 +236,6 @@ describe("quest log bookmark tab", function()
     local e = fake.compartment[1]
     assert.equal(1, #fake.compartment)
     assert.equal("Leveling Advisor", e.text)
-    assert.equal(ns.UI.QuestLogTab.ICON, e.icon)
     assert.equal("Interface\\AddOns\\LevelingAdvisor\\Media\\Logo", e.icon)
     assert.is_true(e.notCheckable)
     e.func()
@@ -445,6 +431,7 @@ describe("quest log side tab", function()
       assert.equal("ANCHOR_RIGHT", fake.tooltip.anchor)
       local lines = fake.tooltip.lines
       assert.same({ "Leveling Advisor", "Open the leveling book" }, { lines[1][1], lines[2][1] })
+      assert.is_true(fake.tooltip.shown)
       fake.leave(t)
       assert.is_false(fake.tooltip.shown)
       assert.same({}, env.errors)
@@ -710,6 +697,26 @@ describe("quest giver ribbon", function()
     assert.same({}, env.errors)
   end)
 
+  -- Each guard on its own: a later row is no recommendation in any section, and the Later
+  -- section recommends nothing even for a row without the flag.
+  it("a later row shows nothing in whatever section holds it", function()
+    load({ chardb = { settings = { guide = false } } }) -- no frozen route plan to fall back on
+    detail(4763)
+    assert.is_true(shown())
+    fake.row(4763).later = true -- a Right Here row
+    detail(4763)
+    assert.is_false(shown())
+  end)
+
+  it("the Later section shows nothing, even for a row without the later flag", function()
+    load({ chardb = { settings = { guide = false } } })
+    local row = fake.row(991)
+    row.later = nil
+    assert.equal("later", ns.Advisor.last.rec.sections[#ns.Advisor.last.rec.sections].key)
+    detail(991)
+    assert.is_false(shown())
+  end)
+
   it("a later page of another quest hides the ribbon of the earlier one", function()
     load()
     detail(4763)
@@ -785,6 +792,41 @@ describe("quest giver ribbon", function()
     fake.flush()
     assert.is_false(ribbon():IsShown())
     assert.equal(0, compute.n)
+    assert.same({}, env.errors)
+  end)
+
+  it("a result that is still stale stops the wait: one compute, no ribbon", function()
+    load()
+    ns.Advisor.last = nil
+    env.UnitLevel = function() return 19 end -- the player levelled while the result was on its way
+    local snapshots, base = 0, ns.Adapter.snapshot
+    ns.Adapter.snapshot = function(...)
+      snapshots = snapshots + 1
+      local s = base(...)
+      if snapshots > 1 then s.level = 19 end -- a later compute would agree
+      return s
+    end
+    local engine = ui.spy(ns.Engine, "compute")
+    detail(4763)
+    fake.flush()
+    assert.equal(1, engine.n)
+    assert.equal(18, ns.Advisor.last.state.level)
+    assert.is_false(shown())
+    assert.same({}, env.errors)
+  end)
+
+  it("a result for a dialog that closed without QUEST_FINISHED shows no ribbon", function()
+    load()
+    ns.Advisor.last = nil
+    detail(4763) -- no result: nothing shown, nothing built yet
+    assert.is_nil(ribbon())
+    env.QuestFrame:Hide() -- closed with no event (the ribbon's OnHide hook does not exist yet)
+    fake.flush()
+    assert.is_not_nil(ns.Advisor.last)
+    assert.is_false(ribbon() ~= nil and ribbon():IsShown())
+    -- and the wait is over: the dialog for the same quest shows it at once next time
+    detail(4763)
+    assert.is_true(shown())
     assert.same({}, env.errors)
   end)
 

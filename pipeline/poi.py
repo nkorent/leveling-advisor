@@ -25,13 +25,13 @@ import json
 import os
 import re
 import sys
-import tomllib
 from collections import Counter
 from pathlib import Path
 
 import lupa
 
-from pipeline.curated import load_dungeons, load_zones, name_key
+from pipeline.census import read_census_json
+from pipeline.curated import load_dungeons, load_zones, name_key, read_toml
 
 OPENMAP_COMMIT = "6c2299f6e1f9bdce1bbd92145f84a05b0c6c05a7"
 HINTS_FILE = "openmap_zone_hints.toml"
@@ -198,16 +198,6 @@ def load_openmap_levels(path: Path) -> dict[int, tuple[int, int]]:
     return out
 
 
-def read_census(path: Path) -> dict:
-    """data/census/maps.json -> {"maps": {uiMapID (int): map}, "areas": ..., "here": [...]}."""
-    try:
-        raw = json.loads(Path(path).read_text(encoding="utf-8"))
-        maps = {int(k): v for k, v in (raw.get("maps") or {}).items()}
-    except (OSError, ValueError, AttributeError) as e:
-        raise ValueError(f"unreadable census {path}: {e}") from e
-    return {"maps": maps, "areas": raw.get("areas") or {}, "here": list(raw.get("here") or [])}
-
-
 # ---------------------------------------------------------------- bounds gate and conversion
 
 def check_bounds(census: dict) -> dict:
@@ -269,10 +259,7 @@ def load_zone_hints(path: Path, census: dict) -> ZoneHints:
     """Read openmap_zone_hints.toml. Each value is a census zone name (or a list, tried in order),
     resolved to its uiMapID through the census names: no uiMapID is typed by hand. ValueError for an
     unknown table, a value that is not a zone name, or a name that is not exactly one census zone."""
-    try:
-        raw = tomllib.loads(Path(path).read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as e:
-        raise ValueError(f"{path}: invalid TOML: {e}") from e
+    raw = read_toml(path)
     by_name: dict[str, list[int]] = {}
     for m, z in census["maps"].items():
         if z.get("mapType") == 3:
@@ -531,21 +518,23 @@ def links_toml(links: list[dict]) -> str:
     return "".join(parts)
 
 
-def _toml_key(key: str) -> str:
+def toml_key(key: str) -> str:
+    """A TOML table key: bare when it can be, else quoted."""
     return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else _toml_value(key)
 
 
 def dungeons_toml(dungeons: dict[str, dict]) -> str:
     parts = [HEADER]
     for key in sorted(dungeons):
-        parts.append(f"\n[dungeons.{_toml_key(key)}]\n")
+        parts.append(f"\n[dungeons.{toml_key(key)}]\n")
         for field in ("name", "entrance", "min_level", "max_level", "group_size", "faction", "live", "quests",
                       "source"):
             parts.append(f"{field} = {_toml_value(dungeons[key][field])}\n")
     return "".join(parts)
 
 
-def _write_atomic(path: Path, text: str) -> None:
+def write_text_atomic(path: Path, text: str) -> None:
+    """Writes text to path through a temp file and os.replace, making the parent dir."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8")
@@ -569,7 +558,7 @@ def run(args, log=print) -> int:
               file=sys.stderr)
         return 2
     try:
-        census = read_census(census_path)
+        census = read_census_json(census_path)
         bounds = check_bounds(census)
         zones = load_zones(curated / "zones.toml", census)
         hints_path = curated / HINTS_FILE
@@ -589,14 +578,14 @@ def run(args, log=print) -> int:
 
     links_path = curated / "links.generated.toml"
     dungeons_path = curated / "dungeons.generated.toml"
-    _write_atomic(links_path, links_toml(links))
-    _write_atomic(dungeons_path, dungeons_toml(dungeons))
+    write_text_atomic(links_path, links_toml(links))
+    write_text_atomic(dungeons_path, dungeons_toml(dungeons))
     report = {"openmap": {"path": str(openmap), "commit": OPENMAP_COMMIT}, "census": str(census_path),
               "bounds": {str(k): v for k, v in bounds.items()},
               "counts": {"links": dict(Counter(l["kind"] for l in links)), "dungeons": len(dungeons),
                          "hints_used": hints_used, "points_by_hint": hinted_points},
               "links": link_problems, "dungeons": dungeon_problems, "hints": hint_problems}
-    _write_atomic(problems_path, json.dumps(report, indent=1, ensure_ascii=False) + "\n")
+    write_text_atomic(problems_path, json.dumps(report, indent=1, ensure_ascii=False) + "\n")
 
     kinds = Counter(l["kind"] for l in links)
     gate = ", ".join(f"{k}: {v['difference'][0]:+.2f}, {v['difference'][1]:+.2f} yd" for k, v in bounds.items())

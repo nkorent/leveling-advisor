@@ -16,9 +16,11 @@ ns.Candidates = Candidates
 
 local FITTING = { yellow = true, green = true }
 
+-- Elite, or for a group of two or more (Route and ZoneScore use it too).
 local function isGroupQuest(q)
   return q.elite or (q.groupSize or 0) >= 2
 end
+Candidates.isGroupQuest = isGroupQuest
 
 -- The quest's difficulty colour for the player.
 function Candidates.fitOf(quest, state)
@@ -50,7 +52,6 @@ function Candidates.build(db, state)
   local out = {}
   local eliteOff = state.settings and state.settings.elite == false
   local ids = db:questIDs()
-  table.sort(ids)
   for _, id in ipairs(ids) do
     local quest = db:quest(id)
     if quest then

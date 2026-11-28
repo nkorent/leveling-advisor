@@ -447,6 +447,15 @@ describe("Unlock.path", function()
       assert.is_nil(seen[s.questID]); seen[s.questID] = true
     end
     assert.equals(3, #p.steps)
+    assert.same({ A, B, C }, field(p, "questID"))
+    assert.same({ 1, 2, 3 }, field(p, "number"))
+    -- the edge back into the cycle (A needs C) adds no layer: A starts with D, a step outside it
+    p = path({ [A] = Q("A", { all = { C } }), [B] = Q("B", { all = { A } }), [C] = Q("C", { all = { B } }),
+      [D] = Q("D"), [E] = Q("E", { all = { C, D } }) }, E)
+    assert.same({ A, D, B, C }, field(p, "questID"))
+    assert.same({ "all", 2 }, { p.steps[1].group.kind, p.steps[1].group.size })
+    assert.equals(p.steps[1].group, p.steps[2].group)
+    assert.is_nil(p.steps[3].group)
   end)
 
   it("xp sums not-done DB steps", function()
@@ -479,6 +488,27 @@ describe("Unlock.path", function()
     assert.equals(64, p.total)
     assert.equals(36, p.steps[1].questID)
     assert.equals(99, p.steps[64].questID)
+  end)
+
+  it("an any-list adds no option once 64 steps are taken, and only the options that fit", function()
+    -- 64 required steps (36..99 of a 100-quest chain) and step 50 waits on X or Y as well
+    local quests = { [1] = Q("Q1"), [X] = Q("X"), [Y] = Q("Y") }
+    for i = 2, 100 do quests[i] = Q("Q" .. i, { all = { i - 1 } }) end
+    quests[50] = Q("Q50", { all = { 49 }, any = { X, Y } })
+    local p = path(quests, 100)
+    assert.equals(64, #p.steps)
+    for _, s in ipairs(p.steps) do assert.is_true(s.questID ~= X and s.questID ~= Y) end
+    -- 63 required steps: one option still fits, the second does not
+    quests = { [1] = Q("Q1"), [X] = Q("X"), [Y] = Q("Y") }
+    for i = 2, 64 do quests[i] = Q("Q" .. i, { all = { i - 1 } }) end
+    quests[64] = Q("Q64", { all = { 63 }, any = { X, Y } })
+    p = path(quests, 64)
+    assert.equals(64, #p.steps)
+    local options = 0
+    for _, s in ipairs(p.steps) do
+      if s.questID == X or s.questID == Y then options = options + 1 end
+    end
+    assert.equals(1, options)
   end)
 
   -- "Chain n/m" (R7): n counts the quests the Unlock Path counts, m adds the longest chain of

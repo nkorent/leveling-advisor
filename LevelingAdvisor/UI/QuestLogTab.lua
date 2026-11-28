@@ -546,7 +546,6 @@ local function build(host, index)
   -- A plain button: the side-tab template's OnLoad would run inside
   -- CreateFrame, where an error reaches the error handler, not a pcall.
   local tab = CreateFrame("Button", "LevelingAdvisorQuestLogTab" .. index, host)
-  tab.laHost = host
   local copied = copiedLook(tab, host)
   local look
   if copied then
@@ -807,7 +806,7 @@ function MB.attach()
 end
 
 ---------------------------------------------------------------------------
--- Quest giver ribbon (ns.UI.GiverRibbon, 0.3.0): "Recommended — take it" under
+-- Quest giver ribbon (ns.UI.GiverRibbon): "Recommended — take it" under
 -- the quest giver's quest page (QuestFrame) when the quest is in the last
 -- recommendation: an eligible section row (not soon, not a turn-in), a pickup
 -- of the current zone's frozen route plan, or a pickup for the recommended
@@ -924,7 +923,7 @@ local function buildRibbon(host)
   logo:SetPoint("LEFT", f, "LEFT", 8, 0)
   logo:SetTexture(QuestLogTab.ICON)
   local title = Style.text(f, "GameFontNormal")
-  title:SetTextColor(Ribbon.GREEN[1], Ribbon.GREEN[2], Ribbon.GREEN[3])
+  Style.setTextColor(title, Ribbon.GREEN[1], Ribbon.GREEN[2], Ribbon.GREEN[3])
   title:SetPoint("TOPLEFT", f, "TOPLEFT", 34, -4)
   title:SetText(Ribbon.TITLE)
   local reason = Style.text(f, "GameFontNormalSmall", Style.INK_SOFT)

@@ -161,7 +161,8 @@ import math
 import re
 from collections import Counter, defaultdict
 
-from pipeline.objectives import Names, build_objectives, rows_from_ids
+from pipeline.objectives import Names, build_objectives, norm_text, rows_from_ids
+from pipeline.outofgames import is_finish_any_label
 
 TEST_NAME_RE = re.compile(
     r"(?i)^(\[(dnt|ph|unused|test)\]|(dnt|ph)$|deprecated\b|unused\b|zz|test\s*\d*$|test quest\b)")
@@ -187,7 +188,7 @@ CLASS_BITS = {"warrior": 1, "paladin": 2, "hunter": 4, "rogue": 8, "priest": 16,
 SINGLE_FACTIONS = ("Alliance", "Horde")
 CONFLICT = "Conflict"   # giver_factions(): outof.games and QuestieDB name opposite factions
 QUESTIE_FRIENDLY = {"A": "Alliance", "H": "Horde", "AH": "Both"}
-# QuestieDB giver fill (Task 8c): spawn trust check and the usable-spawn rule.
+# QuestieDB giver fill: spawn trust check and the usable-spawn rule.
 SPAWN_MATCH_DISTANCE = 3.0     # map units: a QuestieDB spawn this close to an oog spawn matches
 TRUST_MIN_NPCS = 3             # comparable NPCs a uiMapID needs before it can be trusted
 TRUST_MIN_RATE = 0.8           # share of them that must match
@@ -212,13 +213,8 @@ HANDLED_TAGS = frozenset({"Alliance", "Horde", "Alliance and Horde", "Elite", "R
 _LEVEL_TAG_RE = re.compile(r"^(requires level|quest level|about level) [0-9]+$")
 
 
-def _norm_tag(tag: str) -> str:
-    """Badge text as matched: lower case, curly apostrophe straightened, whitespace collapsed."""
-    return " ".join(str(tag).replace("\u2019", "'").split()).lower()
-
-
 def _tag_keys(tags) -> frozenset:
-    return frozenset(_norm_tag(t) for t in tags)
+    return frozenset(norm_text(t) for t in tags)
 
 
 PROFESSION_KEYS, EVENT_KEYS, RAID_KEYS, HANDLED_KEYS = (
@@ -496,20 +492,18 @@ def _questie_race(zq: dict) -> tuple[int | None, str | None]:
 
 
 def _is_seasonal(tag: str) -> bool:
-    low = _norm_tag(tag)
+    low = norm_text(tag)
     return low in SEASONAL_TAGS or "festival" in low
 
 
 def _unknown_tags(tags) -> list[str]:
-    return [t for t in tags if _norm_tag(t) not in HANDLED_KEYS and _norm_tag(t) not in CLASS_BITS
-            and not _is_seasonal(t) and not _LEVEL_TAG_RE.match(_norm_tag(t))]
+    return [t for t in tags if norm_text(t) not in HANDLED_KEYS and norm_text(t) not in CLASS_BITS
+            and not _is_seasonal(t) and not _LEVEL_TAG_RE.match(norm_text(t))]
 
 
 def _unknown_requirements(requirements) -> list[str]:
     def handled(label):
-        low = label.lower()
-        return label in HANDLED_REQUIREMENTS or (
-            low.startswith("finish") and ("one of" in low or "any" in low or "either" in low))
+        return label in HANDLED_REQUIREMENTS or is_finish_any_label(label)
     return [label for label in requirements if not handled(label)]
 
 
@@ -594,7 +588,7 @@ def _merge_one(qid: int, o: dict, z: dict | None, rec: dict | None,
     if masks["class_mask"] is None and _row(requirements, "Class", "Classes") is None:
         tag_mask = 0
         for t in tags:
-            tag_mask |= CLASS_BITS.get(_norm_tag(t), 0)
+            tag_mask |= CLASS_BITS.get(norm_text(t), 0)
         masks["class_mask"] = src("class_mask", tag_mask or None, "tag")
 
     # faction: oog > Questie race mask; then narrowed or contradicted by a one-faction NPC giver
@@ -817,7 +811,7 @@ def _exclusion(o: dict, zs: list, m: dict, info: dict, live_maps, hidden_ids=fro
 
 
 # Exclusion reasons whose quest has no faction the sources agree on: its stub's faction is None
-# (unclear), so the addon never blocks a chain on a faction that may be wrong (R6).
+# (unclear), so the addon never blocks a chain on a faction that may be wrong.
 UNCLEAR_FACTION_REASONS = frozenset({"faction-conflict", "faction-fix-unclear"})
 
 

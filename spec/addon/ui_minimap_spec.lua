@@ -115,7 +115,7 @@ describe("quest mini map", function()
     fake.click(g)
     assert.same({ { mapID = 1439, x = 37.4, y = 40.1 }, "Quest giver and turn-in: Sentinel Shaya", "giver" },
       { spy.calls[1][1], spy.calls[1][2], spy.calls[1][3] })
-    assert.is_truthy(fake.text("Darkshore — click a marker for a waypoint"))
+    assert.is_truthy(fake.visible(fake.text("Darkshore — click a marker for a waypoint")))
     assert.same({}, env.errors)
   end)
 
@@ -265,6 +265,39 @@ describe("quest mini map", function()
     fake.setLog(4763, { objectives = { { text = "5/8 Tough Wolf Meat", type = "item", finished = false } } })
     assert.same({ "Progress: 5/8", 1, 1, 1 }, tip(m[1])[4])
     assert.same({}, env.errors)
+  end)
+
+  it("tooltip: a live count at its goal is done even without the finished flag", function()
+    load({ patch = objectives({ { 1439, 45.2, 35.2, 1 } }, { WOLF }) })
+    local m = objectiveMarkers()
+    fake.setLog(4763, { objectives = { { text = "Tough Wolf Meat: 8/8", type = "item" } } })
+    assert.same({ "Progress: 8/8", 0.1, 1, 0.1 }, tip(m[1])[4])
+    fake.setLog(4763, { objectives = { { text = "Tough Wolf Meat: 7/8", type = "item" } } })
+    assert.same({ "Progress: 7/8", 1, 1, 1 }, tip(m[1])[4])
+  end)
+
+  it("tooltip: one live entry holding the name is its progress; two are ambiguous and show none", function()
+    load({ patch = objectives({ { 1439, 45.2, 35.2, 1 } }, { WOLF }) })
+    local m = objectiveMarkers()
+    fake.setLog(4763, { objectives = { { text = "Big Tough Wolf Meat: 1/8", type = "item" } } })
+    assert.same({ "Progress: 1/8", 1, 1, 1 }, tip(m[1])[4])
+    fake.setLog(4763, { objectives = {
+      { text = "Big Tough Wolf Meat: 1/8", type = "item" },
+      { text = "Small Tough Wolf Meat: 2/8", type = "item" },
+    } })
+    local lines = tip(m[1])
+    assert.equal(4, #lines) -- name, kind, sources, coordinates
+    assert.equal("Item · 8 needed", lines[2][1])
+    assert.equal("45.2, 35.2 · Click: set waypoint", lines[4][1])
+  end)
+
+  it("tooltip: at most three sources, then an ellipsis", function()
+    local function sources(names)
+      load({ patch = objectives({ { 1439, 45.2, 35.2, 1 } }, { { 3, 750, "Tough Wolf Meat", 8, names, 1 } }) })
+      return tip(objectiveMarkers()[1])[3][1]
+    end
+    assert.equal("Drops from: A, B, C", sources({ "A", "B", "C" }))
+    assert.equal("Drops from: A, B, C, …", sources({ "A", "B", "C", "D" }))
   end)
 
   it("tooltip: no progress line when the quest is not in the log or the API fails", function()

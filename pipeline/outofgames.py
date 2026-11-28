@@ -164,9 +164,15 @@ def _prereqs(soup) -> tuple[list[int], list[int]]:
                for a in tds[1].find_all("a", href=_QUEST_HREF_RE)]
         if label == "finish first":
             required += ids
-        elif label.startswith("finish") and ("one of" in label or "any" in label or "either" in label):
+        elif is_finish_any_label(label):
             any_of += ids
     return required, any_of
+
+
+def is_finish_any_label(label: str) -> bool:
+    """A Requirements row naming quests of which any one is enough ("Finish one of", "any", "either")."""
+    low = label.lower()
+    return low.startswith("finish") and ("one of" in low or "any" in low or "either" in low)
 
 
 def _not_available_after(soup) -> list[int]:
@@ -180,7 +186,7 @@ def _not_available_after(soup) -> list[int]:
     return list(dict.fromkeys(ids))
 
 
-def _faction(soup, facts, requirements) -> str | None:
+def _faction(soup, facts) -> str | None:
     """Side fact, then faction badge, then Requirements "Faction" row; else None."""
     def norm(text):
         t = (text or "").strip().lower()
@@ -272,7 +278,7 @@ def parse_quest(html: str, url: str) -> dict:
     return {
         "id": quest_id,
         "name": _text(h1) or None,
-        "faction": _faction(soup, facts, requirements),
+        "faction": _faction(soup, facts),
         "required_level": _int(fact("Required level")),
         "quest_level": quest_level,
         "level_source": "game" if quest_level is not None else "estimate",

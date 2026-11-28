@@ -133,6 +133,7 @@ describe("Sections level fit", function()
         assert.is_true(row.color == "yellow" or row.color == "green" or key == "turnin",
           key .. " row " .. row.questID .. " is " .. row.color)
         assert.is_nil(row.later)
+        assert.is_nil(row.goodAt, key .. " row " .. row.questID .. " has goodAt") -- Later rows only
       end
     end
   end)
@@ -163,6 +164,7 @@ describe("Sections level fit", function()
     key, row = sectionOf(build(d, with(S18, { log = { [991] = { complete = true } } })), 991)
     assert.equals("turnin", key)
     assert.is_nil(row.later)
+    assert.is_nil(row.goodAt)
   end)
 
   it("keeps dungeon quests not in the log out of Later, but lists a logged one", function()
@@ -189,5 +191,34 @@ describe("Sections level fit", function()
     assert.equals(12, ns.Tuning.SECTION_LIMITS.later)
     assert.same({ 8602, 8604, 8606, 8608, 8610, 8612, 8614, 8601, 8603, 8605, 8607, 8609 },
       ids(find(build(d, s), "later")))
+  end)
+end)
+
+describe("Sections.yards", function()
+  local ns = H.load()
+  local db = ns.DB.new(H.data())
+  local S18, with = H.states.S18, H.with
+  local here = { S18.mapID, S18.x, S18.y }
+  local function d(p) return (ns.Geo.distance(db, here, p)) end
+  local giver = { mapID = 1439, x = 40, y = 40 }
+  local turnIn = { mapID = 1439, x = 60, y = 30 }
+  local near, far = { mapID = 1439, x = 45, y = 50 }, { mapID = 1439, x = 70, y = 70 }
+  local q = { giver = giver, turnIn = turnIn, points = { far, near } }
+
+  it("measures to the turn-in when complete", function()
+    assert.equals(d(turnIn), ns.Sections.yards(db, S18, q, "complete"))
+  end)
+  it("measures to the nearest objective point in progress, else to the turn-in", function()
+    assert.equals(d(near), ns.Sections.yards(db, S18, q, "progress"))
+    assert.equals(d(turnIn), ns.Sections.yards(db, S18, { giver = giver, turnIn = turnIn, points = {} }, "progress"))
+  end)
+  it("measures to the giver otherwise", function()
+    for _, status in ipairs({ "eligible", "soon", "available", "done", "unavailable" }) do
+      assert.equals(d(giver), ns.Sections.yards(db, S18, q, status), status)
+    end
+  end)
+  it("is nil without the player's position or the place", function()
+    assert.is_nil(ns.Sections.yards(db, with(S18, { x = false }), q, "eligible"))
+    assert.is_nil(ns.Sections.yards(db, S18, { turnIn = turnIn }, "eligible"))
   end)
 end)

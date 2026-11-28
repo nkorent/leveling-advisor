@@ -30,8 +30,8 @@ Brain stems" for Corrupted Brain Stem, "five pieces of Tough Condor Meat"; digit
 to twenty). The name must end there: "Firegut Ogre" is not in "7 Firegut Ogre Brutes". A number is
 never a count inside a name of the quest's objectives ("Threshwackonator 4100"), inside parentheses
 ("Lesser Heal (Rank 2)"), after Rank or Level, with a leading zero, or in a hyphenated designation
-("A-Me 01"). Otherwise the count is None. There is no "single objective, any number in the text" rule
-(fix round 1): that guessed, e.g. Coagulated Rot x7 from "Collect 7 pieces of Living Rot".
+("A-Me 01"). Otherwise the count is None. There is deliberately no "single objective, any number in
+the text" rule: it guessed, e.g. Coagulated Rot x7 from "Collect 7 pieces of Living Rot".
 
 A point's index (1-based into the objectives) comes from its outof.games name: the one objective whose
 name or entity name it is, else the one item objective it drops from (any source, not only those in
@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 FROM_LIMIT = 3
 GAP_WORDS = 3
@@ -89,18 +90,20 @@ class Names:
             index: dict = {}
             for ident in sorted(table):
                 if table[ident]:
-                    index.setdefault(_norm(table[ident]), []).append(ident)
+                    index.setdefault(norm_text(table[ident]), []).append(ident)
             cache[kind] = index
         return cache[kind]
 
 
 # ---------------------------------------------------------------- words
 
-def _norm(name: str) -> str:
-    """Case, curly apostrophes and spacing folded: how point names are compared."""
+def norm_text(name: str) -> str:
+    """Case, curly apostrophes and spacing folded: how point names (and merge's badge tags) are
+    compared."""
     return " ".join(str(name).replace("’", "'").split()).lower()
 
 
+@lru_cache(maxsize=None)   # pure; a build stems ~650k words but only ~8k distinct ones
 def _stem(word: str) -> str:
     """A crude English stem, the same for a name's word and its plural or participle in the text:
     wolves/wolf, stems/stem, councilmen/councilman, corrupted/corrupt, harpies/harpy."""
@@ -253,7 +256,7 @@ def _sources(item: dict, names: Names, point_names: set, maps) -> tuple[list[str
         def rank(row):
             ident, name = row
             here = any(s.get("map_id") in maps for s in spawns.get(ident) or ())
-            return (_norm(name) not in point_names, not here, ident)
+            return (norm_text(name) not in point_names, not here, ident)
         ordered = list(dict.fromkeys(name for _i, name in sorted(rows, key=rank)))
         return ordered[:FROM_LIMIT], kind, len(ordered) > FROM_LIMIT
     return [], None, False
@@ -261,7 +264,7 @@ def _sources(item: dict, names: Names, point_names: set, maps) -> tuple[list[str
 
 def _entry(kind, ident, name, aliases, sources=()) -> dict:
     return {"kind": kind, "id": ident, "name": name, "aliases": [a for a in aliases if a],
-            "sources": {_norm(s) for s in sources if s}}
+            "sources": {norm_text(s) for s in sources if s}}
 
 
 def _all_source_names(item: dict, names: Names) -> list[str]:
@@ -301,11 +304,11 @@ def _from_points(points, names: Names) -> list[dict]:
     out, seen = [], set()
     for p in points:
         name = p.get("name")
-        if not name or _norm(name) in seen:
+        if not name or norm_text(name) in seen:
             continue
-        seen.add(_norm(name))
+        seen.add(norm_text(name))
         for kind in ("item", "npc", "object"):
-            ids = names.by_name(kind).get(_norm(name))
+            ids = names.by_name(kind).get(norm_text(name))
             if ids:
                 ident = ids[0] if len(ids) == 1 else None
                 item = (names.items.get(ident) or {}) if kind == "item" else {}
@@ -319,8 +322,8 @@ def _from_points(points, names: Names) -> list[dict]:
 def _index(point_name, entries) -> int | None:
     if not point_name:
         return None
-    n = _norm(point_name)
-    direct = [i for i, e in enumerate(entries, 1) if n in {_norm(a) for a in e["aliases"]}]
+    n = norm_text(point_name)
+    direct = [i for i, e in enumerate(entries, 1) if n in {norm_text(a) for a in e["aliases"]}]
     if direct:
         return direct[0] if len(direct) == 1 else None
     dropped = [i for i, e in enumerate(entries, 1) if n in e["sources"]]
@@ -341,7 +344,7 @@ def build_objectives(rows, points, text: str | None, names: Names, maps=()) -> t
         unique.setdefault((row.get("group"), row.get("id"), row.get("text")), row)
     rows = list(unique.values())
     entries = _from_questiedb(rows, names) if rows else _from_points(points, names)
-    point_names = {_norm(p["name"]) for p in points if p.get("name")}
+    point_names = {norm_text(p["name"]) for p in points if p.get("name")}
     objectives = []
     for e in entries:
         others = [a for o in entries if o is not e for a in o["aliases"]]

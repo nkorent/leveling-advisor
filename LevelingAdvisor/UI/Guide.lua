@@ -1,6 +1,6 @@
 local _, ns = ...; ns.UI = ns.UI or {}; ns.UI.Guide = ns.UI.Guide or {}
 
--- The guide (0.3.0): keeps the game's user waypoint on the next step of the top
+-- The guide: keeps the game's user waypoint on the next step of the top
 -- recommended zone's route. The route is the book's own (Advisor.plan +
 -- UI.Model.route), so the book and the guide always agree.
 --   * On each advisor result it sets the waypoint (MapPins.setWaypoint, quiet)
@@ -9,33 +9,41 @@ local _, ns = ...; ns.UI = ns.UI or {}; ns.UI.Guide = ns.UI.Guide or {}
 --     is set (their own, or Show on Map), it pauses until continue() and says so
 --     once in chat. A waypoint the game clears because the player arrived at it
 --     is not a removal.
+--   * It also pauses when the player super-tracks a quest (the quest arrow),
+--     but not for the game's own auto-tracking right after a quest is accepted,
+--     turned in or removed, or after a loading screen (AUTO_TRACK_S).
 --   * Off removes its own waypoint and gives the game's waypoint pin back
 --     (MapPins.releaseOurs); a pause keeps the current waypoint as it is.
 --   * While it runs it asks the advisor for a result (which the book only
 --     computes while it is open) when the target's quest action is done, on a
---     level up and at login, so it moves on with the book closed.
+--     level up, at login and on resume, so it moves on with the book closed.
+--   * A waypoint the player reached (the game clears it on arrival) is not set
+--     again for the same target, not even after a /reload.
 -- On/off is the per-character setting "guide" (Core/Settings.lua keeps it in
--- LevelingAdvisorCharDB.settings). The pause and the guide's last waypoint live
--- in LevelingAdvisorCharDB.guideState, made on the first write.
+-- LevelingAdvisorCharDB.settings). The pause, the guide's last waypoint and
+-- the reached target live in LevelingAdvisorCharDB.guideState, made on the
+-- first write.
 -- Every client API is optional: a missing one never errors.
 local Guide = ns.UI.Guide
 local call, method = ns.Util.call, ns.Util.method
 
 Guide.ARRIVAL_YARDS = 40 -- a waypoint cleared this close to the player was reached
 Guide.MAX_ASKS = 2 -- results asked for one target, so a disagreement never loops
+-- Seconds after these events in which SUPER_TRACKING_CHANGED is the game's own
+-- auto-tracking, not the player's choice.
+Guide.AUTO_TRACK_S = { QUEST_ACCEPTED = 2, QUEST_TURNED_IN = 2, QUEST_REMOVED = 2, PLAYER_ENTERING_WORLD = 5 }
 
 local WHAT = { pickup = "pick up", objective = "objectives", turnin = "turn in" }
 
 local listeners = {}
-local lastKey -- the target set last (per session: a reload sets the target again)
+local lastKey -- the target set last (per session: a reload sets it again unless the player reached it)
 local current -- the target of the last result (QUEST_LOG_UPDATE checks it)
 local asked = 0 -- results asked for that target
 local pending, pendingForce = false, false -- an update waiting for the end of combat
 local failed = false -- the last set did not take (shown by /advisor debug)
+local autoTrackUntil -- GetTime() up to which a super-tracked quest is the game's doing
 
-local function inCombat()
-  return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
-end
+local inCombat = ns.Util.inCombat
 
 local function notify(reason)
   for i = 1, #listeners do
@@ -50,7 +58,7 @@ function Guide.onChange(fn)
   listeners[#listeners + 1] = fn
 end
 
--- LevelingAdvisorCharDB.guideState = { paused, why, spot }, or nil.
+-- LevelingAdvisorCharDB.guideState = { paused, why, spot, reached }, or nil.
 local function saved(create)
   local c = ns.chardb
   if type(c) ~= "table" then return nil end
@@ -81,7 +89,19 @@ local function setSpot(p)
   if s then s.spot = p and { mapID = p.mapID, x = p.x, y = p.y } or nil end
 end
 
--- why: "removed" or "replaced". A new pause says so in chat once (a pause kept
+-- The key of the target whose waypoint the player reached, kept across reloads
+-- until the target changes.
+local function reached()
+  local s = saved(false)
+  return s and s.reached or nil
+end
+
+local function setReached(key)
+  local s = saved(key ~= nil)
+  if s then s.reached = key end
+end
+
+-- why: "removed", "replaced" or "tracking" (a quest). A new pause says so in chat once (a pause kept
 -- from an earlier session does not).
 local function setPaused(on, why)
   local s = saved(on)
@@ -91,7 +111,7 @@ local function setPaused(on, why)
   if on then
     pending, pendingForce = false, false
     setSpot(nil)
-    ns.Util.say("guide paused — use Continue with waypoint to resume.")
+    ns.Util.say("guide paused — click Resume guide to continue.")
   end
   notify("paused")
 end
@@ -180,13 +200,20 @@ local function taken(t)
   return ns.MapPins.isWaypointAt(t)
 end
 
+local placing = false -- inside place(): its own super-tracking is no player choice
+
 local function place(t)
   local previous = spot()
   -- before the call: the client may report the new waypoint from inside it
   setSpot(t)
   local entry = { mapID = t.mapID, x = t.x, y = t.y, quests = { { id = t.questID, name = t.label } } }
-  if ns.MapPins.setWaypoint(entry, { quiet = true }) and taken(t) then
+  placing = true
+  local ok, set = pcall(ns.MapPins.setWaypoint, entry, { quiet = true })
+  placing = false
+  if not ok then error(set, 0) end
+  if set and taken(t) then
     lastKey, failed = keyOf(t), false
+    setReached(nil)
     notify("target")
     return true
   end
@@ -207,11 +234,14 @@ local function update(force)
     return "combat"
   end
   local t = Guide.target()
-  if keyOf(t) ~= keyOf(current) then asked = 0 end
+  local key = keyOf(t)
+  if key ~= keyOf(current) then asked = 0 end
   current = t
   if not t then return "none" end
   if not force then
-    if keyOf(t) == lastKey then return "same", t end
+    if key == lastKey then return "same", t end
+    if key == reached() then return "same", t end
+    setReached(nil) -- the target moved on from the reached one
     -- never replaces a waypoint the player placed (a missed USER_WAYPOINT_UPDATED)
     if owner() == "other" then
       setPaused(true, "replaced")
@@ -222,20 +252,29 @@ local function update(force)
 end
 
 -- A result even while the book is closed (the scheduler's "open" request).
+-- Returns true when this ask armed the scheduler (or, in combat, queued the
+-- compute for the end of the fight); false when a compute was already on its
+-- way or queued (this ask joins it) or there is no scheduler.
 local function askResult()
   local s = ns.Advisor and ns.Advisor.scheduler
-  if s then pcall(s.request, s, "open") end
+  if not s then return false end
+  local joined = s.armed == true or (s.pending == true and inCombat())
+  pcall(s.request, s, "open")
+  return not joined
 end
 
+-- Sets the current target at once, and asks for a fresh result: the last one
+-- may be older than the quest log (the book computes only while it is open),
+-- and the new result moves the waypoint on from a step done since.
 local function resume()
   setPaused(false)
   lastKey = nil
   local status, t = update(true)
-  if status == "none" and not (ns.Advisor and ns.Advisor.last) then askResult() end
+  askResult()
   return status, t
 end
 
--- "Continue with waypoint": clears the pause and sets the current target at
+-- "Resume guide": clears the pause and sets the current target at
 -- once (after the fight in combat), even over the player's own waypoint.
 -- Returns the status ("set", "combat", "none", "off", "failed") and the target.
 function Guide.continue()
@@ -250,6 +289,12 @@ function Guide.setEnabled(on)
   ns.Settings.set("guide", on and true or false)
 end
 
+-- "Guide: On", "Guide: Paused" or "Guide: Off" (the book's toggle and the minimap menu).
+function Guide.label()
+  if not Guide.enabled() then return "Guide: Off" end
+  return Guide.paused() and "Guide: Paused" or "Guide: On"
+end
+
 ---------------------------------------------------------------------------
 -- Text for /advisor guide and /advisor debug.
 ---------------------------------------------------------------------------
@@ -257,8 +302,9 @@ function Guide.describe()
   if not Guide.enabled() then return "Guide: off. Type /advisor guide on to turn it on." end
   if Guide.paused() then
     local s = saved(false) or {}
-    return "Guide: paused — " .. (s.why == "removed" and "you removed its waypoint"
-      or "another waypoint was set") .. ". Type /advisor guide continue to resume."
+    local why = { removed = "you removed its waypoint", tracking = "you are tracking a quest" }
+    return "Guide: paused — " .. (why[s.why] or "another waypoint was set")
+      .. ". Type /advisor guide resume to continue."
   end
   local t = Guide.target()
   if not t then return "Guide: on — no next step right now." end
@@ -274,7 +320,7 @@ function Guide.debugLine()
     tostring(t.mapID), t.x, t.y) or "none"
   return string.format("guide: %s, %s, target %s, waypoint %s%s%s",
     Guide.enabled() and "on" or "off",
-    s.paused and ("paused (" .. tostring(s.why) .. ")") or "not paused",
+    s.paused and ("paused (" .. (s.why == "tracking" and "you are tracking a quest" or tostring(s.why)) .. ")") or "not paused",
     where, owner() or "unknown",
     pending and ", waiting for the end of combat" or "",
     failed and ", the last waypoint did not take" or "")
@@ -294,9 +340,37 @@ local function onWaypointUpdated()
   if who == nil or who == "guide" then return end
   if who == "none" and arrived(p) then
     setSpot(nil)
+    setReached(lastKey)
     return
   end
   setPaused(true, who == "none" and "removed" or "replaced")
+end
+
+local function now()
+  local t = call(GetTime)
+  return type(t) == "number" and t or nil
+end
+
+-- One of the AUTO_TRACK_S events: the game may super-track a quest by itself
+-- for that many seconds. A later window never shortens an earlier, longer one.
+local function autoTracking(seconds)
+  local t = now()
+  if t and (autoTrackUntil == nil or t + seconds > autoTrackUntil) then autoTrackUntil = t + seconds end
+end
+
+-- The player super-tracks a quest (the game's quest arrow, or Show on Map for
+-- a quest in progress): the arrow is theirs now, so the guide pauses. Our own
+-- waypoint fires the same event but super-tracks the waypoint (quest ID 0), and
+-- `placing` covers the calls inside place() anyway. Inside an auto-track window
+-- the game did it, not the player. Without GetTime there is no window.
+local function onSuperTracking()
+  if placing or not active() then return end
+  local t = autoTrackUntil and now()
+  if t and t <= autoTrackUntil then return end
+  local ST = type(C_SuperTrack) == "table" and C_SuperTrack or nil
+  if not ST or type(ST.GetSuperTrackedQuestID) ~= "function" then return end
+  local ok, id = pcall(ST.GetSuperTrackedQuestID)
+  if ok and type(id) == "number" and id > 0 then setPaused(true, "tracking") end
 end
 
 -- Off: clears the user waypoint while it is still the one the guide set (a
@@ -305,6 +379,7 @@ end
 -- player can remove it. Fail-soft without C_Map.ClearUserWaypoint.
 local function stop()
   pending, pendingForce = false, false
+  lastKey, failed, current, asked = nil, false, nil, 0
   local p = spot()
   if p and ns.MapPins.isWaypointAt(p) and type(C_Map) == "table"
       and type(C_Map.ClearUserWaypoint) == "function" and pcall(C_Map.ClearUserWaypoint) then
@@ -326,12 +401,12 @@ local function liveDone(t)
   return false
 end
 
+-- An ask counts towards MAX_ASKS only when it armed the scheduler (or queued the
+-- compute in combat): a burst of QUEST_LOG_UPDATE in one debounce window, or in
+-- one fight, is one compute, so one ask.
 local function onQuestLog()
   if not (active() and current) or asked >= Guide.MAX_ASKS then return end
-  if liveDone(current) then
-    asked = asked + 1
-    askResult()
-  end
+  if liveDone(current) and askResult() then asked = asked + 1 end
 end
 
 ns.Advisor.onUpdate(function() update(false) end)
@@ -347,6 +422,10 @@ ns.Settings.onChange(function(key, value)
 end)
 
 ns.Events.on("USER_WAYPOINT_UPDATED", onWaypointUpdated)
+ns.Events.on("SUPER_TRACKING_CHANGED", onSuperTracking)
+for event, seconds in pairs(Guide.AUTO_TRACK_S) do
+  ns.Events.on(event, function() autoTracking(seconds) end)
+end
 ns.Events.on("QUEST_LOG_UPDATE", onQuestLog)
 ns.Events.on("PLAYER_LEVEL_UP", function()
   if active() then askResult() end

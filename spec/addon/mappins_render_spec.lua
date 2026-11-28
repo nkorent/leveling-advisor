@@ -190,6 +190,7 @@ describe("MapPins rendering", function()
   it("draws nothing when pinsAll is off, and live on toggle", function()
     local c = setup()
     local p = install(c)
+    c.wmf.shown = true
     p:RefreshAllData()
     assert.equals(2, #c.pins)
     c.ns.Settings.set("pinsAll", false)
@@ -213,11 +214,38 @@ describe("MapPins rendering", function()
     assert.equals(0, #c.pins)
   end)
 
-  it("refreshes after each advisor compute", function()
+  it("refreshes after each advisor compute while the world map is shown", function()
     local c = setup()
     install(c)
+    c.wmf.shown = true
     assert.equals(1, #c.updateFns)
     c.updateFns[1]({}, c.ns.Advisor.last)
+    assert.equals(2, #c.pins)
+  end)
+
+  -- Pins for a closed map are wasted work (a plan scan or route per result);
+  -- the map redraws on show (MapCanvas's own refresh and our OnShow hook).
+  it("does not rebuild pins or plan while the world map is hidden", function()
+    local c = setup()
+    local planned = 0
+    c.ns.Advisor.plan = function() planned = planned + 1; return nil end
+    install(c)
+    c.wmf.shown = false
+    c.updateFns[1]({}, c.ns.Advisor.last)
+    c.ns.MapPins.setFocus({ mapID = 1411, x = 1, y = 2, quests = { { id = 1, name = "Quest One" } } })
+    c.ns.Settings.set("pinsAll", false)
+    c.ns.Settings.set("pinsAll", true)
+    assert.equals(0, #c.pins)
+    assert.equals(0, planned)
+  end)
+
+  it("the OnShow hook draws the pins after computes while hidden", function()
+    local c = setup()
+    install(c)
+    c.updateFns[1]({}, c.ns.Advisor.last)
+    assert.equals(0, #c.pins)
+    c.wmf.shown = true
+    c.hooks.OnShow()
     assert.equals(2, #c.pins)
   end)
 

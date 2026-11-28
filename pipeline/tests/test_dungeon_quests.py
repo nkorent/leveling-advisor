@@ -185,6 +185,17 @@ def test_cli_dungeon_crawl_exits_2_when_list_page_fails(tmp_path, monkeypatch):
     import pipeline.__main__ as cli
     monkeypatch.setattr(cli, "make_http_get", lambda timeout: (lambda url, h: (200, "User-agent: *\nDisallow:\n")
                                                               if url.endswith("robots.txt") else (503, "")))
-    monkeypatch.setattr("pipeline.fetch.time.sleep", lambda s: None)
+    slept = []
+    monkeypatch.setattr("pipeline.fetch.time.sleep", slept.append)   # the polite wait, without waiting
     rc = cli.main(["crawl", "--dungeons", "--cache", str(tmp_path / "raw"), "--out", str(tmp_path / "out")])
     assert rc == 2
+    assert len(slept) == 1 and 0 < slept[0] <= 2.0   # the list page still waited after robots.txt
+
+
+def test_write_quests_toml_quotes_odd_keys_makes_the_dir_and_leaves_no_temp_file(tmp_path):
+    import tomllib
+    path = tmp_path / "new" / "dungeons.quests.generated.toml"
+    write_quests_toml({"SM LIB": [2, 3], "DEAD": [7]}, path)
+    assert tomllib.loads(path.read_text(encoding="utf-8"))["dungeons"] == {"SM LIB": {"quests": [2, 3]},
+                                                                         "DEAD": {"quests": [7]}}
+    assert sorted(p.name for p in path.parent.iterdir()) == ["dungeons.quests.generated.toml"]

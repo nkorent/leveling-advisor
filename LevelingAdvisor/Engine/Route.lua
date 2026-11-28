@@ -15,10 +15,6 @@ local function copyState(state, completed)
   return out
 end
 
-local function isGroupQuest(q)
-  return q.elite or (q.groupSize or 0) >= 2
-end
-
 local function onMap(p, mapID)
   if p and p.mapID == mapID and p.x and p.y then return p end
   return nil
@@ -82,11 +78,10 @@ local function chainCandidates(db, state, mapID, entries)
   local completed = state.completed or {}
   local eliteOff = state.settings and state.settings.elite == false
   local ids = db:questsInZone(mapID)
-  table.sort(ids)
   for _, id in ipairs(ids) do
     local q = not entries[id] and db:quest(id) or nil
     if q and not q.dungeonQuest and q.giver and q.giver.mapID == mapID
-        and not (eliteOff and isGroupQuest(q)) then
+        and not (eliteOff and ns.Candidates.isGroupQuest(q)) then
       local status, reason = ns.Eligibility.check(db, q, state)
       if status == nil and reason == "prereq" then
         local all, any = {}, nil
@@ -268,13 +263,6 @@ function Route.forZone(db, state, mapID, candidates, opts)
     elseif a.kind == "objective" then
       objectivesLeft[a.questID] = objectivesLeft[a.questID] - 1
     else turnedIn[a.questID] = true end
-  end
-
-  local function hubHasReady(hub)
-    for _, a in ipairs(hub.members) do
-      if ready(a) then return true end
-    end
-    return false
   end
 
   -- Starting position.

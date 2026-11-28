@@ -106,10 +106,10 @@ describe("Settings", function()
 
   it("aboutLine with and without data meta", function()
     local ns = setup()
-    assert.equals("Leveling Advisor 0.3.0 — GPL-3.0 — " .. SOURCES .. " Game data not built.",
+    assert.equals("Leveling Advisor 0.4.0 — GPL-3.0 — " .. SOURCES .. " Game data not built.",
       ns.Settings.aboutLine())
     ns.Data = { meta = { gameData = "1.60.1" } }
-    assert.equals("Leveling Advisor 0.3.0 — GPL-3.0 — " .. SOURCES .. " Game data 1.60.1.",
+    assert.equals("Leveling Advisor 0.4.0 — GPL-3.0 — " .. SOURCES .. " Game data 1.60.1.",
       ns.Settings.aboutLine())
   end)
 

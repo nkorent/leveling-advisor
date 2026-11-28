@@ -220,10 +220,14 @@ describe("ZoneScore zone kind", function()
   end
 
   it("never recommends a city, even when the player stands in it", function()
-    for _, z in ipairs(rank(1439, "city", H.states.S18)) do assert.not_equals(1439, z.mapID) end
+    local zones = rank(1439, "city", H.states.S18)
+    assert.is_true(#zones > 0) -- the other zones still rank
+    for _, z in ipairs(zones) do assert.not_equals(1439, z.mapID) end
   end)
   it("never recommends a battleground", function()
-    for _, z in ipairs(rank(1439, "battleground", H.states.S18)) do assert.not_equals(1439, z.mapID) end
+    local zones = rank(1439, "battleground", H.states.S18)
+    assert.is_true(#zones > 0)
+    for _, z in ipairs(zones) do assert.not_equals(1439, z.mapID) end
   end)
   it("skips a city with the most XP", function()
     local s = H.with(H.states.S18, { mapID = 1440, x = 40, y = 10 })
@@ -239,7 +243,9 @@ describe("ZoneScore zone kind", function()
     local db = ns.DB.new(data)
     local c = Candidates.build(db, H.states.S18)
     local sections = ns.Sections.build(db, H.states.S18, c, ZoneScore.rank(db, H.states.S18, c))
-    assert.is_truthy(H.find(sections, "here"))
+    local here = {}
+    for _, row in ipairs(H.find(sections, "here").rows) do here[#here + 1] = row.questID end
+    assert.same({ 4763, 7003 }, here) -- Darkshore's, as when it is a leveling zone
   end)
 end)
 

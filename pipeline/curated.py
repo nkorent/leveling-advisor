@@ -21,7 +21,8 @@ GENERATED_SOURCES = ("openmap",)   # removable with build --without
 CURATED_SOURCE = "curated"
 
 
-def _read(path: Path) -> dict:
+def read_toml(path: Path) -> dict:
+    """A TOML file as a dict; ValueError (naming the file) when it is not valid TOML."""
     try:
         return tomllib.loads(Path(path).read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as e:
@@ -101,7 +102,7 @@ def _generated(source, table: str):
     if source is None:
         return None
     if isinstance(source, (str, Path)):
-        return _read(Path(source)).get(table)
+        return read_toml(Path(source)).get(table)
     return source
 
 
@@ -151,7 +152,7 @@ def load_zones_with_problems(path: Path, census: dict | None, generated_links=No
     * a link whose (to, kind) the source zone has as a curated link or lists in its
       `drop_generated = [[to, "kind"], ...]` (intended, not listed).
     """
-    raw = _read(path).get("zones") or {}
+    raw = read_toml(path).get("zones") or {}
     zones, drops = {}, {}
     for key, z in raw.items():
         try:
@@ -242,7 +243,7 @@ def load_dungeons_with_problems(path: Path, generated=None, without=frozenset(),
     quests_generated (by key); dungeons.toml entries are never touched by it.
     """
     quest_lists = _generated(quests_generated, "dungeons") or {}
-    raw = _read(path).get("dungeons") or {}
+    raw = read_toml(path).get("dungeons") or {}
     dungeons = {key: _dungeon(d, f"dungeon {key}") for key, d in raw.items()}
     names = {name_key(d["name"]) for d in dungeons.values()}
     problems = []

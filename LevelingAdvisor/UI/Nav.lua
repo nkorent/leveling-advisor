@@ -34,9 +34,7 @@ function Nav.placeFor(db, questID, state)
   return { mapID = chosen.mapID, x = chosen.x, y = chosen.y, label = q.name }, kind
 end
 
-local function inCombat()
-  return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
-end
+local inCombat = ns.Util.inCombat
 
 local function doOpen(mapID)
   if type(OpenWorldMap) == "function" then

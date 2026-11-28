@@ -108,14 +108,14 @@ FIELDS = {
               "requiredClasses", "objectives", "sourceItemId", "preQuestGroup", "preQuestSingle", "exclusiveTo",
               "requiredSkill", "requiredMinRep", "requiredMaxRep", "specialFlags", "breadcrumbForQuestId",
               "requiredMaxLevel", "requiredSpecialization",
-              # availability gates (C1): read through every layer like the fields above
+              # availability gates: read through every layer like the fields above
               "parentQuest", "requiredSpell", "availableUntilCompleted", "availableStartingWith", "requiredRanks",
               "disabledByQuest",
               # reported only (merge report "next_quest_in_chain"), never gating
               "nextQuestInChain"),
     "Npc": ("name", "minLevel", "spawns", "friendlyToFaction"),
     "Object": ("name", "spawns"),
-    "Item": ("name", "npcDrops", "objectDrops"),     # Task 8: an item objective's name and sources
+    "Item": ("name", "npcDrops", "objectDrops"),     # an item objective's name and sources
 }
 UNIONABLE = ("startedBy", "finishedBy")
 # Quest fields the merge does not gate on: a faction disagreement there just keeps the static value.

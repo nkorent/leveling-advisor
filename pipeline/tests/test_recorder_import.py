@@ -334,3 +334,22 @@ def test_cli_build_with_recorder_dir(tmp_path):
 def test_cli_build_notes_recorder_without_agreed_data(tmp_path, make):
     report = run_build(tmp_path, make(tmp_path))
     assert any("recorder" in n and "no agreed" in n for n in report["notes"])
+
+
+def test_unreadable_payload_files_are_listed(tmp_path):
+    d = store(tmp_path, payload(at=1), payload(at=2))
+    (d / "0000bad.json").write_text("{not json", encoding="utf-8")
+    (d / "0001bad.json").write_text(json.dumps({"v": 99}), encoding="utf-8")
+    assert load_recorder(d)[4763]["level"] == 18
+    assert recorder_import.last_skipped == ["0000bad.json", "0001bad.json"]
+    load_recorder(store(tmp_path / "clean", payload(at=1), payload(at=2)))
+    assert recorder_import.last_skipped == []
+
+
+def test_cli_build_notes_recorder_conflicts_and_unreadable_files(tmp_path):
+    d = store(tmp_path, payload(qid=1, at=1, qlevel=14, x=30.0, y=30.0),
+              payload(qid=1, at=2, qlevel=14, x=45.0, y=30.0))
+    (d / "0000bad.json").write_text("{not json", encoding="utf-8")
+    notes = run_build(tmp_path, d)["notes"]
+    assert "recorder: 1 quest(s) without a recorded giver: the recordings disagree" in notes
+    assert "recorder: 1 unreadable stored payload(s) skipped: 0000bad.json" in notes

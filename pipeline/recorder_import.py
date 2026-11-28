@@ -28,6 +28,7 @@ GIVER_RADIUS = 5.0          # map units (0-100 coordinates)
 MAX_LEVEL = 70
 
 last_conflicts: list[dict] = []   # giver disagreements found by the latest load_recorder call
+last_skipped: list[str] = []      # unreadable stored payload files (names) of the latest read
 
 
 # ---------------------------------------------------------------- decoding
@@ -218,7 +219,9 @@ def _extract(payload: dict) -> dict:
 
 
 def _read_payloads(dir: Path) -> list[tuple[str, dict]]:
-    """(sha1, extracted observations) per readable stored payload, sorted by file name."""
+    """(sha1, extracted observations) per readable stored payload, sorted by file name. The names of
+    the files it cannot read go to last_skipped."""
+    last_skipped.clear()
     dir = Path(dir)
     if not dir.is_dir():
         return []
@@ -229,6 +232,7 @@ def _read_payloads(dir: Path) -> list[tuple[str, dict]]:
             payload = _validated(_int_keys(raw))
             canon = json.dumps(raw["recorder"], sort_keys=True)
         except (OSError, ValueError, RecursionError):
+            last_skipped.append(path.name)
             continue
         ex = _extract(payload)
         ex["canon"] = canon

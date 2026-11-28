@@ -8,7 +8,7 @@ local method = ns.Util.method
 -- objectives on the zone art; hover names a marker, click sets a waypoint.
 -- An objective dot's tooltip says what it is (QuestInfo.objectiveTooltip: name,
 -- kind and count, where an item drops, live progress from the quest log).
--- No player dot (since 0.3.0).
+-- No player dot.
 MiniMap.W, MiniMap.H = 300, 200
 
 local SHIELD = "Interface\\AddOns\\" .. tostring(addonName) .. "\\Media\\PinShield"

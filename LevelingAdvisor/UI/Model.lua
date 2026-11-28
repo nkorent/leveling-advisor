@@ -92,14 +92,14 @@ local function actionDone(id, kind, state)
   return A and A.actionDone and A.actionDone(id, kind, state) or false
 end
 
--- C1: the yellow "!" only for a quest the player can pick up now; a later
+-- The yellow "!" only for a quest the player can pick up now; a later
 -- chain step, a "soon" quest or anything else not eligible gets the grey one.
 local function canPickUp(db, id, state)
   local A = ns.Advisor
   return type(A) == "table" and type(A.canPickUp) == "function" and A.canPickUp(db, id, state) == true
 end
 
--- I2: a planned quest ruled out since the plan was made.
+-- A planned quest ruled out since the plan was made.
 local function questDropped(db, id, state)
   local A = ns.Advisor
   return type(A) == "table" and type(A.questDropped) == "function" and A.questDropped(db, id, state) == true

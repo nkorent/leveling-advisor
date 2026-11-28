@@ -91,6 +91,25 @@ describe("DB", function()
     table.sort(sorted)
     assert.same(sorted, ids)
   end)
+  -- The engine relies on this (Candidates, Route and Travel do not sort again).
+  it("questIDs, questsInZone and zoneIDs are ascending for any insertion order", function()
+    local quests, zones = {}, {}
+    local seed = 7
+    local function nextID() seed = (seed * 1103515245 + 12345) % 2147483648; return 1 + seed % 50000 end
+    for _ = 1, 400 do
+      local id, map = nextID(), 1400 + nextID() % 5
+      quests[id] = { "q" .. id, 1, 0, 0, 1, 1, 1, map, 0, nil, { 1, 1, map, 50, 50 } }
+      zones[2000 + nextID() % 300] = { name = "z" }
+    end
+    local big = ns.DB.new({ quests = quests, zones = zones })
+    local function ascending(list)
+      for i = 2, #list do if list[i - 1] >= list[i] then return false end end
+      return #list > 1
+    end
+    assert.is_true(ascending(big:questIDs()))
+    assert.is_true(ascending(big:zoneIDs()))
+    for map = 1400, 1404 do assert.is_true(ascending(big:questsInZone(map)), map) end
+  end)
   it("exposes npcs, zones, continents, dungeons", function()
     assert.equals("Sentinel Shaya", db:npc(3649)[1])
     assert.equals("Darkshore", db:zone(1439).name)

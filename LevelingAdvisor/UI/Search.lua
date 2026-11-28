@@ -11,9 +11,6 @@ local HINT = "Type at least 2 letters."
 local PROMPT = "Pick a quest to see its details."
 local W = Style.CONTENT_W
 
--- Group order: what can be acted on now, then soon, done, unobtainable.
-local GROUP = { available = 0, progress = 0, complete = 0, soon = 1, done = 2, unavailable = 3 }
-
 -- db -> { ids = {...}, names = { lowercased name per id } }, built once per db.
 local cache = setmetatable({}, { __mode = "k" })
 
@@ -55,7 +52,7 @@ function Search.find(db, query, state, limit)
         id = id, name = name,
         exact = id == exactID and 0 or 1,
         prefix = (byName == 1) and 0 or 1,
-        group = GROUP[status] or 3,
+        group = QuestInfo.STATUS_GROUP[status] or 3,
         dist = math.abs((tonumber(quest.level) or 0) - level),
       }
     end
@@ -184,7 +181,6 @@ UI.onBuild(function(frame)
     self:ClearFocus()
   end)
   box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-  UI.Search.box = box
   function Search.clearBox()
     if (box:GetText() or "") ~= "" then box:SetText("") end
   end

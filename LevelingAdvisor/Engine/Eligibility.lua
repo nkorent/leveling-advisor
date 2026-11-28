@@ -8,8 +8,16 @@ local Eligibility = {}
 ns.Eligibility = Eligibility
 
 local STATE_FACTION = { Alliance = 1, Horde = 2 }
--- Contract A faction id by Contract B state.faction (shared with Unlock).
+-- Contract A faction id by Contract B state.faction (shared with Unlock, Travel,
+-- ZoneScore and Dungeons).
 Eligibility.FACTION_ID = STATE_FACTION
+
+-- True when a record's faction id `f` belongs to the other side: 1 or 2 and not
+-- the player's. 3 (both) and nil (any) are never "other"; with an unknown player
+-- faction (factionID nil) every 1 or 2 is.
+function Eligibility.otherFaction(f, factionID)
+  return (f == 1 or f == 2) and f ~= factionID
+end
 
 -- Plain-arithmetic bit test; stateMask is a single bit. nil mask = any.
 local function maskAllows(mask, stateMask)

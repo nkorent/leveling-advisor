@@ -133,9 +133,9 @@ function Menu.handleClick(owner, questID, button)
   return false
 end
 
--- The minimap button's right-click menu (0.3.0): the guide switch ("Guide: On",
+-- The minimap button's right-click menu: the guide switch ("Guide: On",
 -- "Guide: Paused" or "Guide: Off"; on or paused, it turns the guide off),
--- Continue with waypoint (greyed out while the guide is off) and Settings.
+-- Resume guide (greyed out while the guide is off) and Settings.
 -- Fail-soft: no MenuUtil means no menu; no guide module means Settings only.
 function Menu.openGuide(owner)
   if type(MenuUtil) ~= "table" or type(MenuUtil.CreateContextMenu) ~= "function" then return end
@@ -144,9 +144,8 @@ function Menu.openGuide(owner)
     method(root, "CreateTitle", "Leveling Advisor")
     if Guide then
       local on = Guide.enabled()
-      local label = not on and "Guide: Off" or (Guide.paused() and "Guide: Paused" or "Guide: On")
-      method(root, "CreateButton", label, function() Guide.setEnabled(not on) end)
-      local item = method(root, "CreateButton", "Continue with waypoint", function()
+      method(root, "CreateButton", Guide.label(), function() Guide.setEnabled(not on) end)
+      local item = method(root, "CreateButton", "Resume guide", function()
         if Guide.enabled() then Guide.continue() end
       end)
       if not on then method(item, "SetEnabled", false) end

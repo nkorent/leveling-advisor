@@ -5,6 +5,7 @@ lupa runtime with an empty environment, so it can only assign globals; nothing e
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import lupa
@@ -23,6 +24,18 @@ function(src)
   return env.LevelingAdvisorDiagDB
 end
 """
+
+
+def read_census_json(path: Path) -> dict:
+    """data/census/maps.json (written by `python -m pipeline census`) ->
+    {"maps": {uiMapID (int): map}, "areas": ..., "here": [...]}. ValueError when the file is
+    missing, not JSON, or not shaped like a census export."""
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        maps = {int(k): v for k, v in (raw.get("maps") or {}).items()}
+        return {"maps": maps, "areas": raw.get("areas") or {}, "here": list(raw.get("here") or [])}
+    except (OSError, ValueError, AttributeError, TypeError) as e:
+        raise ValueError(f"unreadable census {path}: {e}") from e
 
 
 def _plain(v):

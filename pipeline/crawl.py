@@ -2,7 +2,7 @@
 
 A plain crawl reads every page from the raw cache when it is there, and reuses the parsed JSON of
 quests and NPCs it has already parsed, so a re-run only fetches what is missing. Two options refresh it
-(see pipeline/README.md, "After a game patch"):
+(see pipeline/README.md, "Crawl cache and refreshing after a game patch"):
 
 * ``refresh_lists``: the quest list pages (page 1, then 2..N from page 1's pagination) are requested
   again, politely, so quest ids added since the last crawl are found and crawled; known ids are not
@@ -60,6 +60,18 @@ def _stats(quests: list[dict]) -> dict:
     }
 
 
+def _error_entry(url: str, exc: Exception) -> dict:
+    """An errors.json row: a FetchError's HTTP status (plus the transport error behind a status 0),
+    else the exception."""
+    if isinstance(exc, FetchError):
+        entry = {"url": url, "status": exc.status}
+        cause = exc.__cause__
+        if cause is not None:
+            entry["error"] = f"{type(cause).__name__}: {cause}"
+        return entry
+    return {"url": url, "error": f"{type(exc).__name__}: {exc}"}
+
+
 def crawl_outofgames(fetcher, out_dir: Path, max_quests: int | None = None, log=print,
                      refresh_lists: bool = False, reparse: bool = False) -> dict:
     out_dir = Path(out_dir)
@@ -73,8 +85,7 @@ def crawl_outofgames(fetcher, out_dir: Path, max_quests: int | None = None, log=
         return html
 
     def fail(url: str, exc: Exception) -> None:
-        errors.append({"url": url, "status": exc.status} if isinstance(exc, FetchError)
-                      else {"url": url, "error": f"{type(exc).__name__}: {exc}"})
+        errors.append(_error_entry(url, exc))
         log(f"ERROR {url}: {exc}")
         _write_json(out_dir / "errors.json", errors)
 
@@ -181,8 +192,7 @@ def crawl_dungeons(fetcher, out_dir: Path, log=print, refresh_lists: bool = Fals
         return html
 
     def fail(url: str, exc: Exception) -> None:
-        errors.append({"url": url, "status": exc.status} if isinstance(exc, FetchError)
-                      else {"url": url, "error": f"{type(exc).__name__}: {exc}"})
+        errors.append(_error_entry(url, exc))
         log(f"ERROR {url}: {exc}")
 
     hrefs: list[str] = []

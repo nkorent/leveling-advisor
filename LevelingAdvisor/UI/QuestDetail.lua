@@ -115,7 +115,7 @@ local function renderHead(d, m)
   local y = height(h.title) + 4
   local c = Style.DIFFICULTY[m.color] or Style.DIFFICULTY.yellow
   h.level:SetText("[" .. tostring(m.level or "?") .. "]")
-  h.level:SetTextColor(c[1], c[2], c[3])
+  Style.setTextColor(h.level, c[1], c[2], c[3])
   h.level:ClearAllPoints()
   h.level:SetPoint("TOPLEFT", h.title, "TOPLEFT", 0, -y)
   local levelW = (h.level:GetStringWidth() or 0) + 6
@@ -142,8 +142,8 @@ end
 local function renderGiver(d, m)
   local g = d.parts.giver
   if not m.giver then setSection(d, "giver", 0); return end
-  local row = QuestInfo.row(d.db, m.questID, d.state)
-  local marker = QuestInfo.marker((row and row.soon) and "unavailable" or (row and row.state) or "available")
+  -- m.state is the availability status; a soon quest is not available yet
+  local marker = QuestInfo.marker(m.state == "soon" and "unavailable" or m.state)
   Style.setTexture(g.marker, marker.atlas, marker.atlas and QuestInfo.MARKER_FILES[marker.atlas] or marker.file,
     marker.desaturated)
   g.title:SetText(m.giver.title or "")
@@ -228,7 +228,7 @@ local function renderItems(d, m)
   local y = 0
   local function group(label, list)
     if #list == 0 then return end
-    y = itemsGrid(p, itemsHeading(p, y, Style.plural(#list, label):gsub("^[%d,]+ ", "")), list, m.title)
+    y = itemsGrid(p, itemsHeading(p, y, (Style.plural(#list, label):gsub("^[%d,]+ ", ""))), list, m.title)
   end
   group("Provided item", model.provided)
   group("Required item", model.required)
@@ -258,8 +258,8 @@ function QuestDetail.new(parent)
   d.content:SetSize(W, 1)
   d.scroll:SetScrollChild(d.content)
 
-  -- UI/UnlockPath.lua is new in this version: without a client restart it is not loaded, and
-  -- the page goes without the section (height 0).
+  -- A file added in an update is not loaded until the client restarts (/reload is not
+  -- enough): without UI/UnlockPath.lua the page goes without the section (height 0).
   local UnlockPath = UI.UnlockPath
   local builders = {
     head = buildHead, giver = buildGiver,
@@ -303,8 +303,6 @@ function QuestDetail.new(parent)
     if d.questID then UI.Nav.showQuest(d.questID) end
   end)
 
-  function d:layout() layout(self) end
-
   -- Shows a message instead of a quest.
   function d:clear(text)
     self.questID = nil
@@ -321,7 +319,7 @@ function QuestDetail.new(parent)
       self:clear("This quest is not in the advisor's database.")
       return
     end
-    -- I5: an advisor refresh of the same quest keeps the reader's place
+    -- an advisor refresh of the same quest keeps the reader's place
     local sameQuest = self.questID == questID
     self.questID, self.db, self.state, self.model = questID, ctx.db, ctx.state, m
     self.message:Hide()

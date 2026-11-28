@@ -286,3 +286,25 @@ local QUESTS = "LevelingAdvisor/Data/Quests.lua"
     assert.is_nil(s); assert.equals("prereq", r)
   end)
 end)
+
+describe("Eligibility.otherFaction", function()
+  local ns = H.load()
+  local other = ns.Eligibility.otherFaction
+  it("is true only for the other side's faction id", function()
+    local FID = ns.Eligibility.FACTION_ID
+    assert.same({ Alliance = 1, Horde = 2 }, FID)
+    -- rows: the record's faction 1, 2, 3 (both), nil; columns: Alliance, Horde, unknown player
+    local expected = {
+      [1] = { false, true, true },
+      [2] = { true, false, true },
+      [3] = { false, false, false },
+      none = { false, false, false },
+    }
+    for f, row in pairs(expected) do
+      local fv = f ~= "none" and f or nil
+      assert.equals(row[1], other(fv, FID.Alliance), tostring(f) .. " vs Alliance")
+      assert.equals(row[2], other(fv, FID.Horde), tostring(f) .. " vs Horde")
+      assert.equals(row[3], other(fv, nil), tostring(f) .. " vs nil")
+    end
+  end)
+end)

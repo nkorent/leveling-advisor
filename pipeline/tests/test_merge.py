@@ -1356,6 +1356,22 @@ def test_stubs_cover_excluded_prerequisites_transitively():
     assert 4 not in stubs
 
 
+def test_stubs_cover_an_excluded_prerequisite_of_an_any_list():
+    """A kept quest needs one of 5 or 6 (prereq.any); 5 is excluded, so it becomes a stub, and so does
+    7, which 5 needs through its own any-list."""
+    oogs = [oq(1, name="A", prereq_any_ids=[5, 6]), oq(6, name="F"),
+            oq(5, name="E", giver=None, prereq_any_ids=[7], faction="Both", tags=[], requirements={}),
+            oq(7, name="G", giver=None, faction="Both", tags=[], requirements={})]
+    quests, report = run(oogs)
+    assert sorted(quests) == [1, 6]
+    assert quests[1]["prereq"]["any"] == [5, 6]
+    assert report["excluded"] == {5: "no-giver-coords", 7: "no-giver-coords"}
+    stubs = report["stubs"]
+    assert set(stubs) == {5, 7}
+    assert stubs[5]["name"] == "E" and stubs[5]["prereq"]["any"] == [7]
+    assert stubs[7]["name"] == "G" and stubs[7]["reason"] == "no-giver-coords"
+
+
 def test_stubs_empty_when_nothing_excluded_is_needed():
     _, report = run([oq(1), oq(2, giver=None)])
     assert report["stubs"] == {}
@@ -1413,6 +1429,23 @@ def test_objectives_and_point_indices_from_questiedb():
     assert q["provenance"]["objectives"] == "questiedb"
     assert report["counts"]["objectives"] == {"quests": 1, "objectives": 1, "counts": 1, "points": 3,
                                               "points_indexed": 2, "required_items": 1, "required_counts": 1}
+
+
+def test_item_sources_spawning_on_a_point_s_map_come_first():
+    """The quest's maps include its objective points' maps, not only the giver's and turn-in's: Young
+    Wolf (299) spawns on 1440, where the quest's point is, so it comes before Timber Wolf (69), a lower
+    id that spawns elsewhere."""
+    o = oq(33, objective_text="Bring 8 pieces of Tough Wolf Meat to Eagan Peltskinner.",
+           objective_points=[_pt("Wolf Den", map_id=1440)])
+    z = qq(33, objective_item_ids=[750], objectives=[{"group": 3, "id": 750, "text": None}])
+    spawns = {299: [{"map_id": 1440, "x": 10.0, "y": 10.0}], 69: [{"map_id": 1411, "x": 10.0, "y": 10.0}]}
+    quests, _ = run([o], [z], questiedb=_names_qdb(npc_spawns=spawns))
+    q = quests[33]
+    assert (q["giver"]["map_id"], q["turn_in"]["map_id"]) == (1439, 1439)
+    assert q["objectives"][0]["from"] == ["Young Wolf", "Timber Wolf"]
+    # without that spawn the lower id comes first
+    quests, _ = run([o], [z], questiedb=_names_qdb(npc_spawns={}))
+    assert quests[33]["objectives"][0]["from"] == ["Timber Wolf", "Young Wolf"]
 
 
 def test_required_item_count_comes_from_the_objective_text():

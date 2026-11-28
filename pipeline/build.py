@@ -3,7 +3,7 @@
 Two modes:
 
 * Census build (default). Needs data/census/maps.json and the curated zones.toml/dungeons.toml
-  (read by Task 7's ``pipeline.curated``). The merge filters quests to live zones, zones carry
+  (read by ``pipeline.curated``). The merge filters quests to live zones, zones carry
   yards, rects and travel links, continents come from census maps of type Continent, and every
   census ``here`` record with an NPC is checked against that NPC's outof.games spawn.
 * Provisional build (``--provisional``). No census, no curated data: the live filter is off,
@@ -28,7 +28,6 @@ untouched and nothing stray inside the addon.
 """
 from __future__ import annotations
 
-import importlib.util
 import json
 import math
 import os
@@ -40,14 +39,17 @@ from datetime import date
 from pathlib import Path
 
 from pipeline.adjacency import adjacency_gaps
-from pipeline.curated import GENERATED_SOURCES
+from pipeline.census import read_census_json
+from pipeline.curated import (GENERATED_SOURCES, load_dungeons_with_problems, load_generated_links,
+                              load_zones_with_problems)
 from pipeline.emit import emit_dungeons, emit_meta, emit_npcs, emit_quests, emit_zones
-from pipeline.poi import OPENMAP_COMMIT
+from pipeline.poi import OPENMAP_COMMIT, load_openmap_levels
 from pipeline.merge import QUESTIE_FRIENDLY, giver_factions, merge, spawn_check
 from pipeline.questiedb import load_questiedb
+from pipeline import recorder_import
+from pipeline.recorder_import import load_recorder
 
 COORD_TOLERANCE = 5.0     # map units (0-100); a census `here` record farther than this fails
-DATA_FILES = ("Meta", "Zones", "NPCs", "Dungeons", "Quests")
 QUESTIEDB_SOURCE = "QuestieDB {tag} Forever (GPL-3.0)"
 OPENMAP_SOURCE = "OpenMap {tag} (MIT)"
 CENSUS_SOURCE = "in-game census (map sizes and rects)"
@@ -191,7 +193,6 @@ def provisional_links(zones: dict[int, dict], curated_dir: Path, without=frozens
     from AND to are both in `zones` are attached; the rest count as dropped_missing_zone. Link
     factions are kept, zone factions are not touched.
     """
-    from pipeline.curated import load_generated_links
     try:
         rows, _removed = load_generated_links(Path(curated_dir) / GENERATED_LINKS_FILE, without)
     except ValueError as e:
@@ -305,12 +306,13 @@ def build(oog_quests: dict[int, dict], oog_npcs: dict[int, dict], questie: dict[
           map_levels: dict | None = None) -> dict:
     """Merge, emit the five Data files into out_dir, write report_path; return the report.
 
-    oog_quests / oog_npcs: outof.games parse_quest / parse_npc dicts by id. questie /
-    questie_npcs: QuestieDBData.quests and .npcs (or dicts of the same shapes; tests pass plain dicts).
-    In the CLI path they are the questiedb object's own. questiedb: the QuestieDBData itself, for the spawn check, the giver and XP fill and
-    the NPCs emitted for page-less givers (questie_tag is then its commit). census: {"maps": {uiMapID: {...}},
-    "here": [...]}; zones / dungeons: Task 7's load_zones / load_dungeons output. A census build
-    needs all three (BuildInputError otherwise); a provisional build ignores them. curated_dir:
+    oog_quests / oog_npcs: outof.games parse_quest / parse_npc dicts by id.
+    questie / questie_npcs: QuestieDBData.quests and .npcs (or dicts of the same shapes; tests
+    pass plain dicts). In the CLI path they are the questiedb object's own.
+    questiedb: the QuestieDBData itself, for the spawn check, the giver and XP fill and the NPCs
+    emitted for page-less givers (questie_tag is then its commit).
+    census: {"maps": {uiMapID: {...}}, "here": [...]}; zones / dungeons: curated's load_zones /
+    load_dungeons output. A census build needs all three (BuildInputError otherwise); a provisional build ignores them. curated_dir:
     a provisional build attaches its links.generated.toml (when present, and openmap is not in
     without); a census build ignores it. map_levels: {uiMapID: (min, max)} from OpenMap
     Levels.lua; levels are zones.toml's, then OpenMap's, then the quest percentiles
@@ -512,24 +514,21 @@ def questiedb_tag(root: Path) -> str | None:
 
 
 def read_census(path: Path) -> dict:
-    """data/census/maps.json (Task 7's `python -m pipeline census`) with integer map ids."""
+    """data/census/maps.json (`python -m pipeline census`) with integer map ids."""
     try:
-        raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        raise BuildInputError(f"unreadable census {path}: {e}") from e
-    return {"maps": {int(k): v for k, v in (raw.get("maps") or {}).items()},
-            "areas": raw.get("areas") or {}, "here": list(raw.get("here") or [])}
+        return read_census_json(path)
+    except ValueError as e:
+        raise BuildInputError(str(e)) from e
 
 
 def load_curated(curated_dir: Path, census: dict, notes: list | None = None,
                  without=frozenset()) -> tuple[dict, dict]:
-    """zones.toml and dungeons.toml, with links.generated.toml / dungeons.generated.toml (Task 8a's
-    `python -m pipeline poi`) merged in under them when those exist.
+    """zones.toml and dungeons.toml, with links.generated.toml / dungeons.generated.toml
+    (`python -m pipeline poi`) merged in under them when those exist.
 
     without: a removed reference source ("openmap") takes out every generated link and
     dungeon it contributed to; curated rows stay. notes get one line per removed reference source
     and the count of generated links dropped for zones zones.toml does not define."""
-    from pipeline.curated import GENERATED_SOURCES, load_dungeons_with_problems, load_zones_with_problems
     curated_dir = Path(curated_dir)
     links, gen_dungeons = curated_dir / "links.generated.toml", curated_dir / "dungeons.generated.toml"
     gen_quests = curated_dir / "dungeons.quests.generated.toml"
@@ -562,20 +561,22 @@ def _census_inputs_missing(args) -> list[str]:
     for name in ("zones.toml", "dungeons.toml"):
         if not (Path(args.curated) / name).is_file():
             problems.append(f"curated file not found: {Path(args.curated) / name}")
-    if importlib.util.find_spec("pipeline.curated") is None:
-        problems.append("curated loaders not built yet (pipeline/curated.py, Plan 2 Task 7)")
     return problems
 
 
-def _load_recorder(path: Path) -> tuple[dict | None, str | None]:
-    if importlib.util.find_spec("pipeline.recorder_import") is None:
-        return None, (f"recorder: {path} skipped, pipeline.recorder_import is not built yet "
-                      "(Plan 4a Task 8)")
-    from pipeline.recorder_import import load_recorder
+def _load_recorder(path: Path) -> tuple[dict | None, list[str]]:
+    """The agreed recorder data and the report notes about it (unreadable files, giver conflicts)."""
     recorder = load_recorder(Path(path))
+    notes = []
+    if recorder_import.last_skipped:
+        notes.append(f"recorder: {len(recorder_import.last_skipped)} unreadable stored payload(s) skipped: "
+                     + ", ".join(recorder_import.last_skipped))
+    conflicts = {c["quest"] for c in recorder_import.last_conflicts}
+    if conflicts:
+        notes.append(f"recorder: {len(conflicts)} quest(s) without a recorded giver: the recordings disagree")
     if not recorder:
-        return recorder, f"recorder: {path} is missing or has no agreed quest data; building without it"
-    return recorder, None
+        notes.append(f"recorder: {path} is missing or has no agreed quest data; building without it")
+    return recorder, notes
 
 
 def run(args, log=print) -> int:
@@ -594,7 +595,6 @@ def run(args, log=print) -> int:
             questie, questie_npcs, tag = questiedb.quests, questiedb.npcs, questiedb_tag(Path(args.questiedb))
         notes, recorder, map_levels = [], None, None
         if "openmap" not in without:
-            from pipeline.poi import load_openmap_levels
             try:
                 map_levels = load_openmap_levels(Path(args.levels))
             except (OSError, ValueError) as e:
@@ -605,9 +605,8 @@ def run(args, log=print) -> int:
             if "recorder" in without:
                 notes.append(f"recorder: {args.recorder} skipped (--without recorder)")
             else:
-                recorder, note = _load_recorder(Path(args.recorder))
-                if note:
-                    notes.append(note)
+                recorder, recorder_notes = _load_recorder(Path(args.recorder))
+                notes.extend(recorder_notes)
         census = zones = dungeons = None
         if not args.provisional:
             census = read_census(Path(args.census))

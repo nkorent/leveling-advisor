@@ -77,6 +77,24 @@ def test_crawl_logs_error_and_continues(tmp_path):
     assert errs == [{"url": Q965, "status": 500}]
 
 
+def transport_error(url):
+    """A FetchError(0) as PoliteFetcher raises it for a transport error (the cause chained)."""
+    try:
+        try:
+            raise ConnectionError("connection reset")
+        except ConnectionError as e:
+            raise FetchError(0, url) from e
+    except FetchError as e:
+        return e
+
+
+def test_transport_error_keeps_its_cause(tmp_path):
+    res = run(tmp_path, FakeFetcher(pages(**{Q965: transport_error(Q965)})))
+    assert res["errors"] == 1
+    errs = json.loads((tmp_path / "errors.json").read_text())
+    assert errs == [{"url": Q965, "status": 0, "error": "ConnectionError: connection reset"}]
+
+
 def test_parse_exception_is_logged_not_raised(tmp_path):
     res = run(tmp_path, FakeFetcher(pages(**{Q965: ValueError("boom")})))
     assert res["errors"] == 1 and res["quests"] == 1

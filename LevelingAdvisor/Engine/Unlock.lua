@@ -314,7 +314,9 @@ local function forward(db)
 end
 
 -- Steps on the longest chain of followers after `id`, at most MAX_STEPS. A follower still
--- being measured (a cycle) adds nothing.
+-- being measured (a cycle) adds nothing. A value measured inside a cycle is cached like any
+-- other, so in a prerequisite cycle (rare in the data) the length can depend on which of its
+-- quests was measured first.
 local function stepsAfter(f, id)
   local n = f.after[id]
   if n then return n end

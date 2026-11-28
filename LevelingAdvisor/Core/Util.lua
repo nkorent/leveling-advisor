@@ -16,6 +16,13 @@ function Util.call(fn, ...)
   return unwrap(pcall(fn, ...))
 end
 
+-- True while the client's combat lockdown is on; false without the API.
+function Util.inCombat()
+  return type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
+end
+
+Util.COMBAT_MSG = "Not in combat: try again after the fight."
+
 -- Calls obj:name(...) fail-soft.
 function Util.method(obj, name, ...)
   if type(obj) ~= "table" then return nil end

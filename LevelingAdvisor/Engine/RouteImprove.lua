@@ -56,7 +56,6 @@ local function buildModel(db, steps, depsOpt)
       if list[#list] ~= q then list[#list + 1] = q end
     end
   end
-  local dependents = {}
   for q, c in pairs(quests) do
     if c.pickup then
       local d = depsOpt and (depsOpt[q] or { all = {}, any = {} }) or dbDeps(db, q)
@@ -64,21 +63,17 @@ local function buildModel(db, steps, depsOpt)
         local pc = quests[p]
         if pc and pc.turnin then
           c.all[#c.all + 1] = pc.turnin
-          dependents[p] = dependents[p] or {}
-          table.insert(dependents[p], q)
         end
       end
       for _, p in ipairs(d.any or {}) do
         local pc = quests[p]
         if pc and pc.turnin then
           c.any[#c.any + 1] = pc.turnin
-          dependents[p] = dependents[p] or {}
-          table.insert(dependents[p], q)
         end
       end
     end
   end
-  return { quests = quests, nodeQuests = nodeQuests, dependents = dependents }
+  return { quests = quests, nodeQuests = nodeQuests }
 end
 
 local function questOk(c, posOf)

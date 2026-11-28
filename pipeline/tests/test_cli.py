@@ -71,3 +71,23 @@ def test_crawl_refresh_lists_flag_and_list_failure_exit_code(tmp_path, monkeypat
     assert cli.main(["crawl", *args]) == 0 and seen == {"refresh_lists": False, "reparse": False}
     assert cli.main(["crawl", "--refresh-lists", *args]) == 2        # list page 1 failed: exit 2
     assert seen == {"refresh_lists": True, "reparse": False}
+
+
+def test_every_command_is_documented_in_the_cli_docstring_and_the_readme(capsys):
+    import re
+    from pathlib import Path
+
+    import pytest
+
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    commands = re.search(r"\{([a-z,-]+)\}", capsys.readouterr().out).group(1).split(",")
+    assert {"crawl", "dungeon-quests", "census", "import-recorder", "build", "poi"} <= set(commands)
+    readme = (Path(__file__).parents[1] / "README.md").read_text(encoding="utf-8")
+    block = readme.split("Commands (from the repo root):", 1)[1].split("\n\n", 2)[1]
+    for cmd in commands:
+        assert f"python -m pipeline {cmd}" in cli.__doc__, cmd
+        assert f"python -m pipeline {cmd}" in block, cmd
+    assert "python -m pipeline crawl --dungeons" in block
+    assert "dungeon-quests [--oog DIR] [--curated DIR] [--report FILE]" in cli.__doc__
+    assert "[paths ...]" not in cli.__doc__

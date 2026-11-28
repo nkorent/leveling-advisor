@@ -117,7 +117,7 @@ function RouteView.stepElement(frame, step, handlers)
     Style.setTexture(line.marker, m.atlas, m.atlas and QuestInfo.MARKER_FILES[m.atlas] or m.file, m.desaturated)
     line.text:SetText(q.name .. " — " .. q.what)
     local c = q.done and Style.INK_SOFT or Style.INK
-    line.text:SetTextColor(c[1], c[2], c[3])
+    Style.setTextColor(line.text, c[1], c[2], c[3])
     line.bg:SetShown(q.selected and true or false)
     line:Show()
   end
@@ -274,7 +274,7 @@ local function dungeonRow(frame, e)
     UI.QuestRow.render(frame, e.row, {
       selected = cur and cur.questID == e.row.questID,
       chain = true,
-      -- I1: a quest this character cannot act on says why ("Horde only", ...)
+      -- a quest this character cannot act on says why ("Horde only", ...)
       sub = QuestInfo.statusText(e.row),
       onClick = function(row) UI.select(row.questID) end,
     })
@@ -407,7 +407,7 @@ local function updateDungeon(v, ctx)
           order = #rows, group = QuestInfo.statusGroup(row) }
       end
     end
-    -- I1: what this character can act on first; the data's order within a group
+    -- what this character can act on first; the data's order within a group
     table.sort(rows, function(a, b)
       if a.group ~= b.group then return a.group < b.group end
       return a.order < b.order

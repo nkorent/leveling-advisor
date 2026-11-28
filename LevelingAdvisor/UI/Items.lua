@@ -202,7 +202,7 @@ end
 -- 37 px button; they do not follow SetSize.
 Items.SLOT = 37
 
--- size: the on-screen size. A mini button (I6) is a full 37 px button scaled
+-- size: the on-screen size. A mini button is a full 37 px button scaled
 -- down (Blizzard's own way for small item buttons), so its slot frame and
 -- quality border shrink with it; b.laScale is that scale (anchor offsets of
 -- the button are in its own, scaled, units).

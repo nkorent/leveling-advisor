@@ -5,13 +5,11 @@ local _, ns = ...
 local Travel = {}
 ns.Travel = Travel
 
-local FACTION_ID = { Alliance = 1, Horde = 2 }
-
 -- Zone faction is a questing affinity, not a wall: only the other faction's
 -- capital (a city) is closed to a traveller.
 local function enterable(z, factionID)
   if z == nil or not z.live then return false end
-  local enemyCapital = z.kind == "city" and (z.faction == 1 or z.faction == 2) and z.faction ~= factionID
+  local enemyCapital = z.kind == "city" and ns.Eligibility.otherFaction(z.faction, factionID)
   return not enemyCapital
 end
 
@@ -28,10 +26,9 @@ function Travel.fromPlayer(db, state)
   local reach = {}
   if not (state and state.mapID) then return reach end
   local T = ns.Tuning
-  local factionID = FACTION_ID[state.faction]
+  local factionID = ns.Eligibility.FACTION_ID[state.faction]
 
   local ids = db:zoneIDs()
-  table.sort(ids)
 
   reach[state.mapID] = {
     xp = 0, hops = {},

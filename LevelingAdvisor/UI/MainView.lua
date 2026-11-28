@@ -177,21 +177,16 @@ function MainView.initRow(frame, e)
   end
 end
 
--- "Guide: On/Paused/Off" and "Continue with waypoint", on their own row right
+-- "Guide: On/Paused/Off" and "Resume guide", on their own row right
 -- under the recommendations heading's rule. Labels follow Guide.onChange; hidden
 -- without the guide module. Paused, the toggle still turns the guide off and
--- Continue resumes it.
-local function guideLabel(G)
-  if not G.enabled() then return "Guide: Off" end
-  return G.paused() and "Guide: Paused" or "Guide: On"
-end
-
+-- Resume guide resumes it.
 local function refreshGuide()
   local G = ns.UI.Guide
   local on = G and G.enabled()
   if view.guideToggle then
     view.guideToggle:SetShown(G ~= nil)
-    view.guideToggle:SetText(G and guideLabel(G) or "Guide: Off")
+    view.guideToggle:SetText(G and G.label() or "Guide: Off")
   end
   if view.guideContinue then
     view.guideContinue:SetShown(G ~= nil)
@@ -217,8 +212,8 @@ local function fitWidth(b, labels, min, fallback)
 end
 
 function MainView.buildGuideControls(right)
-  view.guideContinue = Style.button(right, "Continue with waypoint", 170)
-  fitWidth(view.guideContinue, { "Continue with waypoint" }, 150, 170)
+  view.guideContinue = Style.button(right, "Resume guide", 110)
+  fitWidth(view.guideContinue, { "Resume guide" }, 100, 110)
   view.guideContinue:SetPoint("TOPRIGHT", view.questsHeading.rule, "BOTTOMRIGHT", 0, -GUIDE_GAP)
   view.guideContinue:SetScript("OnClick", function()
     if ns.UI.Guide then ns.UI.Guide.continue() end

@@ -207,4 +207,14 @@ describe("Util", function()
     ns.Util.say("hi")
     assert.same({ "|cffffd100Leveling Advisor:|r hi" }, out)
   end)
+
+  it("inCombat reads InCombatLockdown as a boolean, false without the API", function()
+    local ns, env = addon.load({ "Core/Util.lua" })
+    env.InCombatLockdown = function() return 1 end
+    assert.is_true(ns.Util.inCombat())
+    env.InCombatLockdown = function() return nil end
+    assert.is_false(ns.Util.inCombat())
+    env.InCombatLockdown = nil
+    assert.is_false(ns.Util.inCombat())
+  end)
 end)
